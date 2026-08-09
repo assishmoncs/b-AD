@@ -13,6 +13,7 @@
     "ytd-statement-banner-renderer",
     "ytd-companion-slot-renderer",
     "ytd-reel-shelf-renderer[is-ad]",
+    "ytd-player-legacy-desktop-watch-ads-renderer",
     "#masthead-ad",
     "#player-ads",
     ".video-ads",
@@ -29,11 +30,32 @@
     ".ytp-skip-ad-button",
     ".ytp-ad-skip-button-modern",
     "button.ytp-ad-skip-button",
-    ".ytp-ad-skip-button-slot button"
+    ".ytp-ad-skip-button-slot button",
+    ".ytp-ad-skip-button-container button"
   ];
 
+  let isDisabled = false;
+
+  function checkDisabledStatus() {
+    return new Promise(res => {
+      try {
+        chrome.storage.local.get({ globallyDisabled: false, disabledSites: [] }, stats => {
+          if (stats.globallyDisabled) return res(true);
+          const host = location.hostname.replace(/^www\./, "");
+          const isPaused = (stats.disabledSites || []).some(s => host === s || host.endsWith("." + s));
+          res(isPaused);
+        });
+      } catch (_) {
+        res(false);
+      }
+    });
+  }
+
   function notify() {
-    try { chrome.runtime.sendMessage({ type: "BAD_BLOCKED", url: "youtube.com", kind: "ad" }); } catch (_) {}
+    if (isDisabled) return;
+    try {
+      chrome.runtime.sendMessage({ type: "BAD_BLOCKED", url: "youtube.com", kind: "ad" });
+    } catch (_) {}
   }
 
   function injectStyles() {
@@ -54,6 +76,7 @@
   }
 
   function trySkip() {
+    if (isDisabled) return false;
     for (const sel of SKIP_SELECTORS) {
       const btn = document.querySelector(sel);
       if (btn) {
@@ -66,6 +89,7 @@
   }
 
   function skipByTime() {
+    if (isDisabled) return false;
     const video = getVideo();
     if (!video) return false;
     if (isAdPlaying() && isFinite(video.duration) && video.duration > 0) {
@@ -85,6 +109,7 @@
   }
 
   function handleAd() {
+    if (isDisabled) return;
     if (!isAdPlaying()) {
       restoreAudio();
       return;
@@ -116,6 +141,7 @@
   }
 
   function hideStaticAds() {
+    if (isDisabled) return;
     YT_HIDE_SELECTORS.forEach(sel => {
       try {
         document.querySelectorAll(sel).forEach(el => {
@@ -127,26 +153,36 @@
 
   function startObserver() {
     const obs = new MutationObserver(() => {
+      if (isDisabled) return;
       handleAd();
       hideStaticAds();
     });
     obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
   }
 
-  const fastInterval = setInterval(() => {
-    handleAd();
-    hideStaticAds();
-  }, 300);
+  async function init() {
+    isDisabled = await checkDisabledStatus();
+    if (isDisabled) return;
 
-  setTimeout(() => {
-    clearInterval(fastInterval);
-    setInterval(() => {
+    injectStyles();
+    hideStaticAds();
+    startObserver();
+
+    const fastInterval = setInterval(() => {
+      if (isDisabled) return;
       handleAd();
       hideStaticAds();
-    }, 1000);
-  }, 20000);
+    }, 300);
 
-  injectStyles();
-  hideStaticAds();
-  startObserver();
+    setTimeout(() => {
+      clearInterval(fastInterval);
+      setInterval(() => {
+        if (isDisabled) return;
+        handleAd();
+        hideStaticAds();
+      }, 1000);
+    }, 20000);
+  }
+
+  init();
 })();

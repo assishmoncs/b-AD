@@ -83,7 +83,7 @@
       chrome.runtime.sendMessage({
         type: "BAD_MODE_REPORT",
         mode: window.__bAD.mode,
-        host: location.hostname
+        host: location.hostname.replace(/^www\./, "")
       });
     } catch (_) {}
   }, { once: true });

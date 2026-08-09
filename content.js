@@ -41,7 +41,10 @@
     "#ad-slot",
     ".advertisement-container",
     ".ads-wrapper",
-    'iframe[src*="ads"]'
+    'iframe[src*="ads"]',
+    ".sponsored-post",
+    ".promoted-content",
+    ".native-ad-unit"
   ];
 
   const TRACKER_PATTERNS = [
@@ -58,22 +61,48 @@
     /heap\.io/,
     /bat\.bing\.com/,
     /tr\.snapchat\.com/,
-    /analytics\.twitter\.com/
+    /analytics\.twitter\.com/,
+    /clarity\.ms/,
+    /mc\.yandex\.ru/
   ];
 
+  let isDisabled = false;
+
+  function checkDisabledStatus() {
+    return new Promise(res => {
+      try {
+        chrome.storage.local.get({ globallyDisabled: false, disabledSites: [] }, stats => {
+          if (stats.globallyDisabled) return res(true);
+          const host = location.hostname.replace(/^www\./, "");
+          const isPaused = (stats.disabledSites || []).some(s => host === s || host.endsWith("." + s));
+          res(isPaused);
+        });
+      } catch (_) {
+        res(false);
+      }
+    });
+  }
+
   function notify(url, kind) {
-    try { chrome.runtime.sendMessage({ type: "BAD_BLOCKED", url, kind }); } catch (_) {}
+    if (isDisabled) return;
+    try {
+      chrome.runtime.sendMessage({ type: "BAD_BLOCKED", url, kind });
+    } catch (_) {}
   }
 
   function matches(el, selectors) {
     if (!el || !el.matches) return false;
-    return selectors.some(s => { try { return el.matches(s); } catch (_) { return false; } });
+    return selectors.some(s => {
+      try { return el.matches(s); } catch (_) { return false; }
+    });
   }
 
   function queryAll(root, selectors) {
     const found = new Set();
     selectors.forEach(s => {
-      try { (root || document).querySelectorAll(s).forEach(e => found.add(e)); } catch (_) {}
+      try {
+        (root || document).querySelectorAll(s).forEach(e => found.add(e));
+      } catch (_) {}
     });
     return [...found];
   }
@@ -83,9 +112,11 @@
     el.style.setProperty("pointer-events", "none", "important");
     el.style.setProperty("max-height", "1px", "important");
     el.style.setProperty("overflow", "hidden", "important");
+    el.style.setProperty("opacity", "0", "important");
   }
 
   function processAd(el) {
+    if (isDisabled) return;
     if (MODE === "stealth") {
       hideEl(el);
     } else {
@@ -98,16 +129,18 @@
     if (document.getElementById("b-ad-v3-style")) return;
     const style = document.createElement("style");
     style.id = "b-ad-v3-style";
-    style.textContent = AD_SELECTORS.join(",\n") + "{\nvisibility:hidden!important;\npointer-events:none!important;\nmax-height:1px!important;\noverflow:hidden!important;\n}";
+    style.textContent = AD_SELECTORS.join(",\n") + "{\nvisibility:hidden!important;\npointer-events:none!important;\nmax-height:1px!important;\noverflow:hidden!important;\nopacity:0!important;\n}";
     (document.head || document.documentElement).appendChild(style);
   }
 
   function scanRoot(root) {
+    if (isDisabled) return;
     queryAll(root, AD_SELECTORS).forEach(el => processAd(el));
   }
 
   function startObserver() {
     const obs = new MutationObserver((mutations) => {
+      if (isDisabled) return;
       for (const m of mutations) {
         for (const node of m.addedNodes) {
           if (node.nodeType !== 1) continue;
@@ -129,7 +162,10 @@
     obs.observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  function boot() {
+  async function boot() {
+    isDisabled = await checkDisabledStatus();
+    if (isDisabled) return;
+
     injectBaseStyles();
     scanRoot(document.body || document.documentElement);
     startObserver();

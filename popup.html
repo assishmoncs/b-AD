@@ -2,84 +2,194 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>b-AD</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>b-AD Protection</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <div class="root">
+  <div class="app-container">
 
-    <div class="header">
-      <div class="logo-block">
-        <div class="logo-hex">⬡</div>
-        <div class="logo-text">b<span>-</span>AD</div>
-        <div class="logo-version">v3</div>
+    <!-- Top Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="shield-badge">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="title">b-AD</span>
+          <span class="version-tag">v3.0</span>
+        </div>
       </div>
-      <div class="status-block" id="statusBlock">
-        <div class="status-dot" id="statusDot"></div>
-        <span id="statusLabel">ACTIVE</span>
+      
+      <div class="header-controls">
+        <label class="power-toggle" title="Toggle Global Protection">
+          <input type="checkbox" id="globalToggle" checked />
+          <span class="power-slider"></span>
+        </label>
       </div>
-    </div>
+    </header>
 
-    <div class="mode-strip" id="modeStrip">
-      <span class="mode-icon" id="modeIcon">◉</span>
-      <span class="mode-text" id="modeText">SCANNING…</span>
-    </div>
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="tab-overview">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Overview
+      </button>
+      <button class="tab-btn" data-tab="tab-domains">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        Domains
+      </button>
+      <button class="tab-btn" data-tab="tab-settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+    </nav>
 
-    <div class="grid">
-      <div class="tile tile-red">
-        <div class="tile-label">ADS BLOCKED</div>
-        <div class="tile-value" id="adsBlocked">0</div>
-        <div class="tile-glyph">✕</div>
+    <!-- Tab 1: Overview -->
+    <main class="tab-content active" id="tab-overview">
+      <!-- Status Card -->
+      <div class="status-card" id="statusCard">
+        <div class="status-header">
+          <div class="status-indicator">
+            <div class="pulse-dot" id="statusDot"></div>
+            <span class="status-title" id="statusLabel">PROTECTION ACTIVE</span>
+          </div>
+          <span class="mode-badge" id="modeBadge">NORMAL</span>
+        </div>
+        <div class="site-bar">
+          <span class="site-host" id="currentHost">scanning...</span>
+          <button class="site-toggle-btn" id="btnSiteToggle">Pause Site</button>
+        </div>
       </div>
-      <div class="tile tile-amber">
-        <div class="tile-label">TRACKERS</div>
-        <div class="tile-value" id="trackersBlocked">0</div>
-        <div class="tile-glyph">◎</div>
-      </div>
-      <div class="tile tile-blue">
-        <div class="tile-label">BANDWIDTH</div>
-        <div class="tile-value" id="bandwidthSaved">0 B</div>
-        <div class="tile-glyph">▾</div>
-      </div>
-      <div class="tile tile-green">
-        <div class="tile-label">TOP DOMAIN</div>
-        <div class="tile-value tile-value--sm" id="topDomain">—</div>
-        <div class="tile-glyph">★</div>
-      </div>
-    </div>
 
-    <div class="bar-section">
-      <div class="bar-header">
-        <span class="bar-legend"><span class="dot dot-red"></span>Ads</span>
-        <span class="bar-legend"><span class="dot dot-amber"></span>Trackers</span>
-        <span class="bar-total" id="barTotal">0 total</span>
-      </div>
-      <div class="bar-track">
-        <div class="bar-seg seg-red"   id="segAds"   style="width:0%"></div>
-        <div class="bar-seg seg-amber" id="segTrack" style="width:0%"></div>
-      </div>
-    </div>
+      <!-- Metrics Grid -->
+      <div class="metrics-grid">
+        <div class="metric-card metric-red">
+          <div class="metric-head">
+            <span class="metric-label">ADS BLOCKED</span>
+            <span class="metric-icon">✕</span>
+          </div>
+          <div class="metric-value" id="adsBlocked">0</div>
+        </div>
 
-    <div class="domains-block">
-      <div class="domains-head">
-        <span>BLOCKED DOMAINS</span>
-        <span class="domains-count" id="domainsCount">0</span>
+        <div class="metric-card metric-amber">
+          <div class="metric-head">
+            <span class="metric-label">TRACKERS</span>
+            <span class="metric-icon">◎</span>
+          </div>
+          <div class="metric-value" id="trackersBlocked">0</div>
+        </div>
+
+        <div class="metric-card metric-blue">
+          <div class="metric-head">
+            <span class="metric-label">DATA SAVED</span>
+            <span class="metric-icon">⚡</span>
+          </div>
+          <div class="metric-value" id="bandwidthSaved">0 B</div>
+        </div>
+
+        <div class="metric-card metric-green">
+          <div class="metric-head">
+            <span class="metric-label">TOP AD SOURCE</span>
+            <span class="metric-icon">★</span>
+          </div>
+          <div class="metric-value metric-value--sm" id="topDomain">—</div>
+        </div>
       </div>
+
+      <!-- Ratio Bar -->
+      <div class="ratio-section">
+        <div class="ratio-header">
+          <span>Blocking Breakdown</span>
+          <span class="ratio-total" id="barTotal">0 total</span>
+        </div>
+        <div class="ratio-track">
+          <div class="ratio-seg seg-ads" id="segAds" style="width:0%"></div>
+          <div class="ratio-seg seg-trackers" id="segTrack" style="width:0%"></div>
+        </div>
+        <div class="ratio-legend">
+          <span class="legend-item"><span class="dot dot-red"></span> Ads</span>
+          <span class="legend-item"><span class="dot dot-amber"></span> Trackers</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tab 2: Domain Intelligence -->
+    <main class="tab-content" id="tab-domains">
+      <div class="domains-toolbar">
+        <div class="search-box">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="domainSearch" placeholder="Search blocked domains..." />
+        </div>
+        <span class="domains-badge" id="domainsCount">0</span>
+      </div>
+
       <div class="domains-list" id="domainsList">
-        <div class="domains-empty">No data — start browsing</div>
+        <div class="domains-empty">No blocked domains recorded yet.</div>
       </div>
-    </div>
+    </main>
 
-    <div class="footer">
-      <button class="reset-btn" id="btnReset">↺ RESET STATS</button>
-      <div class="footer-right">
-        <span class="footer-shield">⬡</span>
-        <span class="footer-copy">b-AD 3.0</span>
+    <!-- Tab 3: Settings -->
+    <main class="tab-content" id="tab-settings">
+      <div class="settings-group">
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-title">Global Protection Switch</span>
+            <span class="setting-desc">Enable or disable b-AD across all tabs</span>
+          </div>
+          <label class="power-toggle">
+            <input type="checkbox" id="settingsGlobalToggle" checked />
+            <span class="power-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-title">Stealth Mode Evasion</span>
+            <span class="setting-desc">Auto-spoof adblock detection scripts</span>
+          </div>
+          <span class="status-pill green">ACTIVE</span>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-title">YouTube Engine 2.0</span>
+            <span class="setting-desc">Auto-skip video ads & hide layout promos</span>
+          </div>
+          <span class="status-pill green">ACTIVE</span>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-title">Network Rule Engine</span>
+            <span class="setting-desc">50 declarative V3 block rules</span>
+          </div>
+          <span class="status-pill green">ACTIVE</span>
+        </div>
       </div>
-    </div>
+
+      <div class="danger-zone">
+        <button class="reset-btn" id="btnReset">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          RESET ALL ANALYTICS
+        </button>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="footer-status">
+        <span class="shield-mini">⬡</span>
+        <span>b-AD Manifest V3 Shield</span>
+      </div>
+      <span class="footer-privacy">Privacy First • Local Only</span>
+    </footer>
 
   </div>
   <script src="popup.js"></script>
