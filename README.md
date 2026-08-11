@@ -1,23 +1,24 @@
-# b-AD v3.0 — Smart Ad & Tracker Blocker
+# b-AD Ultra v4.0 — Next-Gen Ad, Tracker & Privacy Suite
 
-![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-blue.svg)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
-![Privacy](https://img.shields.io/badge/Privacy-100%25%20Local-purple.svg)
-![Performance](https://img.shields.io/badge/Overhead-Zero-orange.svg)
+![Version](https://img.shields.io/badge/Version-v4.0%20Ultra-blue.svg)
+![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-green.svg)
+![SponsorBlock](https://img.shields.io/badge/YouTube-SponsorBlock%203.0-red.svg)
+![Zapper](https://img.shields.io/badge/Feature-Visual%20Zapper-purple.svg)
+![Privacy](https://img.shields.io/badge/Privacy-100%25%20Local-orange.svg)
 
-> **b-AD** is an enterprise-grade, high-performance Chrome extension designed to block ads, tracking scripts, telemetry, and popups while evading anti-adblock detection scripts and automatically skipping YouTube video ads.
+> **b-AD Ultra v4.0** is an enterprise-grade Chrome Manifest V3 privacy suite with dynamic DNR network blocking, anti-adblock stealth evasion, YouTube SponsorBlock integration, a point-and-click Visual Element Zapper, GDPR cookie banner cleaner, and a full-page Options & Control Center.
 
 ---
 
-## 🌟 Overview
+## 🚀 What's New in Version 4.0 Ultra
 
-Modern websites rely on aggressive ad networks, session recorders, heatmaps, and sophisticated anti-adblock detectors. **b-AD v3.0** operates across multiple browser layers simultaneously:
-
-- **Network-Level Blocking**: Uses 50 declarative `declarativeNetRequest` rules to neutralize ad servers and trackers before requests reach the socket layer with **zero CPU overhead**.
-- **DOM Cosmetic Filtering**: Removes ad banners, sponsored containers, and native ad widgets without altering page layouts.
-- **Stealth Evasion Engine**: Dynamically detects anti-adblock scripts (`FuckAdBlock`, `AdNgine`, bait height checks) and spoofs window parameters, returning fake 200 OK responses to ad pings.
-- **YouTube Engine 2.0**: Dedicated video player controller that auto-skips video ads, speeds up unskippable ads 16x, mutes ad audio, and removes display banners.
-- **Glassmorphic Telemetry Dashboard**: A dark-mode UI with live metric counters, tabbed domain intelligence with category tags, per-site pause toggles, and instant analytics search.
+- **⚡ Visual Element Zapper (`zapper.js`)**: Interactive point-and-click element remover on any page (`Ctrl+Shift+Z` / `Cmd+Shift+Z`). Highlights elements with a neon overlay and saves custom CSS selectors persistently.
+- **🎥 YouTube Engine 3.0**: Integrated **SponsorBlock API** segment skipping (auto-skips sponsor intros, self-promos, and outros) + YouTube Shorts ad auto-scroller.
+- **🛡️ Dynamic DNR Rules Engine**: Add custom network blocking filters dynamically via `chrome.declarativeNetRequest.updateDynamicRules`.
+- **⚙️ Advanced Options Dashboard (`options.html`)**: Control panel for managing cosmetic filters, dynamic DNR rules, whitelist tables, and configuration backup/restore.
+- **🍪 GDPR Cookie Wall Cleaner**: Automatically detects and dismisses cookie consent walls and newsletter modals (`#onetrust-banner-sdk`, `.cookie-consent`).
+- **🥷 Anti-Fingerprinting Canvas Protection**: Subtle noise protection against Canvas/WebGL tracking scripts + Prebid & GoogleTag parameter spoofing.
+- **🔔 Action Badge Stat Counter**: Extension icon displays real-time blocked count badge with live status indicator colors.
 
 ---
 
@@ -33,67 +34,70 @@ flowchart TD
 
     subgraph ContentScripts ["Content Script Layer"]
         DOM --> Scan[detector_scan.js]
+        DOM --> Zapper[zapper.js - Visual Element Picker]
         Scan -->|Detect Anti-Adblock| Stealth[stealth_mode.js]
         Scan -->|Standard Site| Normal[content.js]
 
-        Stealth -->|Spoof Globals & Intercept XHR/Fetch| PageRuntime[Website Execution Context]
-        Normal -->|DOM Removal / Cosmetic Hide| PageDOM[Cleaned Layout]
+        Stealth -->|Canvas Noise & XHR Hook| PageRuntime[Website Context]
+        Normal -->|DOM Removal & GDPR Cleaner| PageDOM[Cleaned Layout]
     end
 
-    subgraph YouTubeEngine ["YouTube Engine 2.0"]
+    subgraph YouTubeEngine ["YouTube Engine 3.0"]
         DOM -->|youtube.com| YTEngine[youtube_engine.js]
-        YTEngine -->|Auto Skip / 16x Fast-Forward| YTPlayer[HTML5 Player]
-        YTEngine -->|Cosmetic CSS Cleanup| YTLayout[YouTube UI]
+        YTEngine -->|SponsorBlock API| SponsorSegments[Skip Sponsor Timestamps]
+        YTEngine -->|Auto Skip & Shorts Cleaner| YTPlayer[HTML5 Player]
     end
 
-    subgraph Management ["Extension Worker & Dashboard"]
-        ContentScripts -->|BAD_BLOCKED / BAD_MODE_REPORT| ServiceWorker[background.js]
+    subgraph Dashboard ["Control Center & Options"]
+        ContentScripts -->|BAD_BLOCKED| ServiceWorker[background.js]
         ServiceWorker <-->|chrome.storage.local| Storage[(Local Storage)]
-        Dashboard[popup.html / popup.js] <-->|GET_STATS / TOGGLE_SITE| ServiceWorker
+        Popup[popup.html / popup.js] <--> ServiceWorker
+        Options[options.html / options.js] <--> Storage
     end
 ```
 
 ---
 
-## 🔥 Key Features
+## 🔥 Core Modules
 
-### 1. 🛡️ Dual-Layer Blocking System
-- **50 Declarative Net Rules**: Blocks Google DoubleClick, AdSense, Amazon Ads, Taboola, Outbrain, Criteo, TikTok Ads, Bing Ads, PopAds, and crypto miners before network resolution.
-- **Tracker Neutralization**: Neutralizes Google Analytics, Tag Manager, Facebook Pixel, Hotjar, Microsoft Clarity, FullStory, Mixpanel, Segment, Amplitude, and Yandex Metrika.
+### 1. ⚡ Visual Element Zapper
+Press `Ctrl+Shift+Z` (or click **Zap Element** in the popup / context menu) on any web page:
+- Hover over any annoying element to highlight it with a neon bounding box.
+- Click to permanently hide the element and auto-generate a custom CSS selector saved in your options.
 
-### 2. 🥷 Stealth Evasion Mode
-- **Window Property Spoofing**: Exposes valid `canRunAds = true`, `adsbygoogle.loaded = true`, `google_jobrunner = true` to defeat inline detection routines.
-- **Ad Ping Hooking**: Intercepts `XMLHttpRequest` and `fetch` calls to known ad beacons, resolving them silently with fake `200 OK` status codes.
-- **Bait Height Spoofing**: Intercepts `HTMLElement.prototype.offsetHeight` for bait elements (`adsbox`, `ad-placement`), returning non-zero values to trick height-check algorithms.
+### 2. 🎥 YouTube Engine 3.0 (SponsorBlock + Shorts)
+- **Video Ads**: Auto-skips pre-rolls/mid-rolls and speeds through unskippable ads at `16x` while muting audio.
+- **SponsorBlock**: Fetches sponsor timestamps from SponsorBlock API (`sponsor.ajay.app`) to auto-skip in-video sponsor segments, intros, and self-promotions.
+- **Shorts Cleaner**: Automatically detects sponsored Shorts and scrolls to the next video.
 
-### 3. 🎥 YouTube Engine 2.0
-- **Auto-Skipping**: Instantly triggers `.ytp-ad-skip-button` and `.ytp-ad-skip-button-modern` buttons as soon as they spawn.
-- **Instant Seek & Fast-Forward**: If an ad is unskippable, jumps `video.currentTime = video.duration` and temporarily accelerates playback to `16x` while muting audio.
-- **Audio Restoration Guard**: Automatically restores normal playback speed (`1x`) and audio once the main video resumes.
-- **Display Ad Cleaner**: Hides masthead ads, video overlays, companion banners, and Shorts sponsored shelves via injected high-priority CSS rules.
-
-### 4. 📊 Glassmorphic Analytics Dashboard
-- **Live Stats Overview**: Tracks total ads blocked, trackers neutralized, estimated bandwidth saved, and top ad sources.
-- **Domain Intelligence Tab**: Interactive, searchable list of blocked domains with rank counters, category badges (*Analytics*, *Ad Network*, *Heatmaps*, *Social Tracking*), and percentage fill bars.
-- **Per-Site & Global Toggle**: One-click pause switch to disable protection globally or whitelist the currently active domain.
+### 3. ⚙️ Options & Rule Control Center
+Access via right-click extension -> Options or Popup -> Options & Rules:
+- **Cosmetic Selector Manager**: Add, edit, or remove custom CSS zapper rules.
+- **Dynamic DNR Filter Editor**: Add network block patterns (`||adserver.com^`).
+- **Backup & Restore**: Export settings to JSON or import existing rules.
+- **Whitelist Table**: Manage trusted sites.
 
 ---
 
-## 📂 Project Structure
+## 📂 File Structure
 
 ```
 b-ad-v3/
-├── manifest.json          # Chrome Extension Manifest V3 configuration
-├── background.js          # Background Service Worker — state & telemetry manager
-├── content.js             # DOM ad scanner, cosmetic filter, and observer
-├── detector_scan.js       # Anti-adblock detector engine & mode classifier
-├── stealth_mode.js        # Global property spoofer & XHR/fetch network hook
-├── youtube_engine.js      # Dedicated YouTube video ad skipper & layout cleaner
-├── rules.json             # 50 declarativeNetRequest V3 blocking rules
-├── tracker_list.json      # Categorized reference database for telemetry UI
-├── popup.html             # Multi-tab glassmorphic popup dashboard
-├── popup.css              # Industrial dark theme design system & micro-animations
-├── popup.js               # Dashboard state controller & domain intelligence search
+├── manifest.json          # Manifest V3 (DNR, options page, contextMenus, commands)
+├── background.js          # Background Worker — state, badge counters, dynamic DNR
+├── content.js             # Cosmetic ad remover, GDPR wall cleaner, Shadow DOM scanner
+├── zapper.js              # Visual Element Zapper overlay & selector generator
+├── detector_scan.js       # Anti-adblock classifier & mode detector
+├── stealth_mode.js        # Anti-fingerprint Canvas noise & JS parameter spoofer
+├── youtube_engine.js      # YouTube 3.0 engine — SponsorBlock API & Shorts cleaner
+├── rules.json             # 50 static declarativeNetRequest rules
+├── tracker_list.json      # Categorized reference database for popup dashboard
+├── popup.html             # Multi-tab popup interface with Quick Actions
+├── popup.css              # Dark glassmorphic design system
+├── popup.js               # Popup state & event controller
+├── options.html           # Full-page Options & Control Center
+├── options.css            # Options page dashboard styling
+├── options.js             # Options logic (DNR rules, backup/import JSON)
 └── README.md              # Project documentation
 ```
 
@@ -101,28 +105,21 @@ b-ad-v3/
 
 ## 🚀 Installation Guide
 
-### Loading Unpacked Extension in Chrome
-
-1. Clone or download this repository to your local machine:
-   ```bash
-   git clone https://github.com/your-username/b-ad-v3.git
-   ```
+1. Clone or download this repository.
 2. Open Chrome and navigate to `chrome://extensions`.
 3. Enable **Developer mode** in the top-right corner.
-4. Click **Load unpacked** in the top-left toolbar.
-5. Select the `b-ad-v3/` root folder.
-6. **b-AD** is now installed and active! Pin the extension to your toolbar to open the live dashboard.
+4. Click **Load unpacked** and select the `b-ad-v3/` root folder.
+5. Pin **b-AD Ultra** to your toolbar.
 
 ---
 
-## 🔒 Privacy & Performance
+## 🔒 Privacy Guarantee
 
-- **100% Local Storage**: All telemetry (counts, bandwidth saved, domain lists) is stored exclusively on your device in `chrome.storage.local`.
-- **Zero Analytics / No Remote Servers**: b-AD never makes any external network requests or transmits user data to remote endpoints.
-- **Zero Overhead**: Declarative rules run at the native browser engine level, resulting in 0ms main-thread scripting delay during page navigation.
+- **100% Local Storage**: All telemetry and custom filter rules remain strictly in `chrome.storage.local`.
+- **Zero Analytics**: No user tracking, no telemetry endpoints, zero third-party dependencies.
 
 ---
 
 ## 📜 License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+MIT License

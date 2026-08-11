@@ -23,6 +23,8 @@ const TRACKER_DOMAIN_SET = new Set([
   "mc.yandex.ru","sentry.io","bugsnag.com"
 ]);
 
+const tabBlockCounts = new Map();
+
 function getInitialState() {
   return {
     adsBlocked: 0,
@@ -31,7 +33,9 @@ function getInitialState() {
     domainCounts: {},
     siteModes: {},
     disabledSites: [],
-    globallyDisabled: false
+    globallyDisabled: false,
+    customSelectors: [],
+    customDnrRules: []
   };
 }
 
@@ -52,17 +56,20 @@ function extractDomain(url) {
   }
 }
 
-function matchesDomainSet(url, set) {
-  try {
-    const host = new URL(url).hostname;
-    for (const d of set) {
-      if (host === d || host.endsWith("." + d)) return true;
-    }
-  } catch (_) {}
-  return false;
+function updateTabBadge(tabId, count, isPaused) {
+  if (isPaused) {
+    chrome.action.setBadgeText({ tabId, text: "OFF" });
+    chrome.action.setBadgeBackgroundColor({ tabId, color: "#ff9f0a" });
+  } else if (count > 0) {
+    chrome.action.setBadgeText({ tabId, text: count > 999 ? "999+" : String(count) });
+    chrome.action.setBadgeBackgroundColor({ tabId, color: "#ff3b30" });
+  } else {
+    chrome.action.setBadgeText({ tabId, text: "ON" });
+    chrome.action.setBadgeBackgroundColor({ tabId, color: "#30d158" });
+  }
 }
 
-async function recordBlock(url, kind) {
+async function recordBlock(url, kind, tabId) {
   const stats = await getStats();
   if (stats.globallyDisabled) return;
 
@@ -81,19 +88,96 @@ async function recordBlock(url, kind) {
   stats.domainCounts[d] = (stats.domainCounts[d] || 0) + 1;
 
   chrome.storage.local.set(stats);
+
+  if (tabId) {
+    const c = (tabBlockCounts.get(tabId) || 0) + 1;
+    tabBlockCounts.set(tabId, c);
+    updateTabBadge(tabId, c, false);
+  }
+}
+
+function matchesDomainSet(url, set) {
+  try {
+    const host = new URL(url).hostname;
+    for (const d of set) {
+      if (host === d || host.endsWith("." + d)) return true;
+    }
+  } catch (_) {}
+  return false;
 }
 
 if (chrome.declarativeNetRequest && chrome.declarativeNetRequest.onRuleMatchedDebug) {
   chrome.declarativeNetRequest.onRuleMatchedDebug.addListener(({ request }) => {
-    recordBlock(request.url, "ad");
+    recordBlock(request.url, "ad", request.tabId);
   });
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// Context Menu Setup
+function createContextMenus() {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: "BAD_ZAP_ELEMENT",
+      title: "⚡ Zap Element on Page (b-AD)",
+      contexts: ["page", "selection", "image", "video"]
+    });
+    chrome.contextMenus.create({
+      id: "BAD_TOGGLE_SITE",
+      title: "⏸ Pause / Resume b-AD on this Site",
+      contexts: ["page"]
+    });
+    chrome.contextMenus.create({
+      id: "BAD_OPEN_OPTIONS",
+      title: "⚙ Open Advanced Options",
+      contexts: ["page"]
+    });
+  });
+}
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (!tab || !tab.id) return;
+
+  if (info.menuItemId === "BAD_ZAP_ELEMENT") {
+    chrome.tabs.sendMessage(tab.id, { type: "START_ZAPPER" });
+  }
+
+  if (info.menuItemId === "BAD_TOGGLE_SITE") {
+    try {
+      const host = new URL(tab.url).hostname.replace(/^www\./, "");
+      getStats().then(stats => {
+        const list = new Set(stats.disabledSites || []);
+        if (list.has(host)) list.delete(host); else list.add(host);
+        stats.disabledSites = Array.from(list);
+        chrome.storage.local.set({ disabledSites: stats.disabledSites }, () => {
+          chrome.tabs.reload(tab.id);
+        });
+      });
+    } catch (_) {}
+  }
+
+  if (info.menuItemId === "BAD_OPEN_OPTIONS") {
+    chrome.runtime.openOptionsPage();
+  }
+});
+
+// Keyboard Commands Listener
+chrome.commands.onCommand.addListener(command => {
+  if (command === "zap_element") {
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+      if (tabs[0] && tabs[0].id) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: "START_ZAPPER" });
+      }
+    });
+  }
+});
+
+// Message Listener
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== "object") return false;
 
+  const tabId = sender && sender.tab ? sender.tab.id : null;
+
   if (msg.type === "BAD_BLOCKED") {
-    recordBlock(msg.url || "unknown", msg.kind || "ad");
+    recordBlock(msg.url || "unknown", msg.kind || "ad", tabId);
     sendResponse({ ok: true });
     return true;
   }
@@ -117,11 +201,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getStats().then(stats => {
       const site = msg.host;
       const list = new Set(stats.disabledSites || []);
-      if (list.has(site)) {
-        list.delete(site);
-      } else {
-        list.add(site);
-      }
+      if (list.has(site)) list.delete(site); else list.add(site);
       stats.disabledSites = Array.from(list);
       chrome.storage.local.set({ disabledSites: stats.disabledSites }, () => {
         sendResponse({ ok: true, disabledSites: stats.disabledSites });
@@ -140,6 +220,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "ADD_DYNAMIC_RULE") {
+    const filter = msg.filter;
+    if (filter && chrome.declarativeNetRequest.updateDynamicRules) {
+      const ruleId = Math.floor(Math.random() * 899999) + 100000;
+      const rule = {
+        id: ruleId,
+        priority: 1,
+        action: { type: "block" },
+        condition: { urlFilter: filter, resourceTypes: ["script", "image", "xmlhttprequest", "sub_frame"] }
+      };
+      chrome.declarativeNetRequest.updateDynamicRules({
+        addRules: [rule]
+      }, () => {
+        getStats().then(stats => {
+          stats.customDnrRules = stats.customDnrRules || [];
+          stats.customDnrRules.push({ id: ruleId, filter });
+          chrome.storage.local.set({ customDnrRules: stats.customDnrRules }, () => {
+            sendResponse({ ok: true, ruleId });
+          });
+        });
+      });
+      return true;
+    }
+  }
+
   if (msg.type === "RESET_STATS") {
     const fresh = getInitialState();
     chrome.storage.local.set(fresh, () => sendResponse({ ok: true }));
@@ -149,8 +254,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true;
 });
 
+chrome.tabs.onRemoved.addListener(tabId => {
+  tabBlockCounts.delete(tabId);
+});
+
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason === "install") {
     chrome.storage.local.set(getInitialState());
   }
+  createContextMenus();
 });

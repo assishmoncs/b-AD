@@ -8,7 +8,8 @@
     /adservice\.google/,
     /fuckadblock/i,
     /blockthrough/i,
-    /adngin/i
+    /adngin/i,
+    /pagead2\.googlesyndication/
   ];
 
   function matchesPing(url) {
@@ -26,10 +27,13 @@
   defineIfAbsent("canRunAds", true);
   defineIfAbsent("google_jobrunner", true);
   defineIfAbsent("adsbygoogle", { loaded: true, push: () => {} });
+  defineIfAbsent("googletag", { cmd: [], apiReady: true });
+  defineIfAbsent("pbjs", { que: [], adUnits: [] });
   defineIfAbsent("adblock", false);
   defineIfAbsent("adBlockEnabled", false);
   defineIfAbsent("isAdBlockActive", false);
 
+  // XHR Hook
   const _xhrOpen = XMLHttpRequest.prototype.open;
   const _xhrSend = XMLHttpRequest.prototype.send;
 
@@ -55,6 +59,7 @@
     return _xhrSend.apply(this, [body]);
   };
 
+  // Fetch Hook
   const _fetch = window.fetch;
   window.fetch = function (input, init) {
     const url = typeof input === "string" ? input : (input && input.url) || "";
@@ -64,6 +69,7 @@
     return _fetch.apply(this, [input, init]);
   };
 
+  // Height Check Bait Spoofing
   const _ohDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
   if (_ohDesc && _ohDesc.get) {
     const BAIT = ["adsbox", "ad-placement", "ad-placeholder", "doubleclick"];
@@ -80,6 +86,25 @@
     });
   }
 
+  // Canvas Fingerprint Protection
+  try {
+    const _toDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function (...args) {
+      const ctx = this.getContext("2d");
+      if (ctx) {
+        try {
+          const imgData = ctx.getImageData(0, 0, Math.min(this.width, 10), Math.min(this.height, 10));
+          if (imgData.data.length > 0) {
+            imgData.data[0] = (imgData.data[0] + 1) % 255;
+            ctx.putImageData(imgData, 0, 0);
+          }
+        } catch (_) {}
+      }
+      return _toDataURL.apply(this, args);
+    };
+  } catch (_) {}
+
+  // Suppress AdBlock Error Noise
   const _consoleError = console.error.bind(console);
   const _consoleWarn  = console.warn.bind(console);
   const NOISE_RE = /adsbygoogle|doubleclick|googlesyndication|adservice|adblock/i;

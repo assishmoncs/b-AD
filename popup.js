@@ -77,7 +77,6 @@ function setupTabs() {
 
 function renderMode(mode, isPausedGlobal, isPausedSite) {
   const card = document.getElementById("statusCard");
-  const dot = document.getElementById("statusDot");
   const label = document.getElementById("statusLabel");
   const badge = document.getElementById("modeBadge");
 
@@ -222,6 +221,22 @@ function bindEvents() {
     const host = await getActiveTabHost();
     if (!host) return;
     chrome.runtime.sendMessage({ type: "TOGGLE_SITE", host }, refresh);
+  });
+
+  // Zap Button Trigger
+  document.getElementById("btnZap").addEventListener("click", () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+      if (tabs[0] && tabs[0].id) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: "START_ZAPPER" }, () => {
+          window.close();
+        });
+      }
+    });
+  });
+
+  // Options Control Center Trigger
+  document.getElementById("btnOptions").addEventListener("click", () => {
+    chrome.runtime.openOptionsPage();
   });
 
   document.getElementById("btnReset").addEventListener("click", () => {

@@ -35,6 +35,8 @@
   ];
 
   let isDisabled = false;
+  let currentVideoId = "";
+  let sponsorSegments = [];
 
   function checkDisabledStatus() {
     return new Promise(res => {
@@ -59,9 +61,9 @@
   }
 
   function injectStyles() {
-    if (document.getElementById("b-ad-yt-v3")) return;
+    if (document.getElementById("b-ad-yt-v4")) return;
     const s = document.createElement("style");
-    s.id = "b-ad-yt-v3";
+    s.id = "b-ad-yt-v4";
     s.textContent = YT_HIDE_SELECTORS.join(",\n") + "{\ndisplay:none!important;\nvisibility:hidden!important;\n}";
     (document.head || document.documentElement).appendChild(s);
   }
@@ -108,18 +110,70 @@
     }
   }
 
+  // SponsorBlock API Integration
+  async function fetchSponsorSegments(videoId) {
+    if (!videoId || videoId === currentVideoId) return;
+    currentVideoId = videoId;
+    sponsorSegments = [];
+    try {
+      const categories = '["sponsor","selfpromo","interaction","intro","outro"]';
+      const url = `https://sponsor.ajay.app/api/skipSegments?videoID=${videoId}&categories=${encodeURIComponent(categories)}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          sponsorSegments = data.map(item => item.segment);
+        }
+      }
+    } catch (_) {}
+  }
+
+  function checkSponsorBlock() {
+    if (isDisabled || !sponsorSegments.length) return;
+    const video = getVideo();
+    if (!video || isAdPlaying()) return;
+
+    const curTime = video.currentTime;
+    for (const [start, end] of sponsorSegments) {
+      if (curTime >= start && curTime < end - 0.5) {
+        video.currentTime = end;
+        notify();
+        break;
+      }
+    }
+  }
+
+  function checkShortsAd() {
+    if (isDisabled) return;
+    if (location.pathname.includes("/shorts/")) {
+      const activeShort = document.querySelector("ytd-reel-video-renderer[is-active]");
+      if (activeShort && (activeShort.querySelector("[is-ad]") || activeShort.querySelector(".ytd-ad-slot-renderer"))) {
+        const nextBtn = document.querySelector("#navigation-button-down button") || document.querySelector("button.ytd-shorts");
+        if (nextBtn) {
+          nextBtn.click();
+          notify();
+        }
+      }
+    }
+  }
+
   function handleAd() {
     if (isDisabled) return;
+    checkShortsAd();
+    checkSponsorBlock();
+
     if (!isAdPlaying()) {
       restoreAudio();
       return;
     }
     if (trySkip()) return;
     skipByTime();
+
     setTimeout(() => {
       trySkip();
       skipByTime();
     }, 100);
+
     setTimeout(() => {
       if (isAdPlaying()) {
         const video = getVideo();
@@ -129,6 +183,7 @@
         }
       }
     }, 300);
+
     setTimeout(() => {
       if (!isAdPlaying()) {
         const video = getVideo();
@@ -151,13 +206,20 @@
     });
   }
 
-  function startObserver() {
-    const obs = new MutationObserver(() => {
-      if (isDisabled) return;
-      handleAd();
-      hideStaticAds();
-    });
-    obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+  function watchURLChanges() {
+    let lastUrl = location.href;
+    setInterval(() => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        const u = new URL(location.href);
+        const v = u.searchParams.get("v");
+        if (v) fetchSponsorSegments(v);
+      }
+    }, 1000);
+
+    const u = new URL(location.href);
+    const v = u.searchParams.get("v");
+    if (v) fetchSponsorSegments(v);
   }
 
   async function init() {
@@ -166,22 +228,13 @@
 
     injectStyles();
     hideStaticAds();
-    startObserver();
+    watchURLChanges();
 
-    const fastInterval = setInterval(() => {
+    setInterval(() => {
       if (isDisabled) return;
       handleAd();
       hideStaticAds();
     }, 300);
-
-    setTimeout(() => {
-      clearInterval(fastInterval);
-      setInterval(() => {
-        if (isDisabled) return;
-        handleAd();
-        hideStaticAds();
-      }, 1000);
-    }, 20000);
   }
 
   init();

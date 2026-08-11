@@ -1,25 +1,29 @@
 {
   "manifest_version": 3,
-  "name": "b-AD",
-  "version": "3.0.0",
-  "description": "Smart ad and tracker blocker with stealth mode, YouTube engine, and live analytics dashboard.",
+  "name": "b-AD Ultra",
+  "version": "4.0.0",
+  "description": "Enterprise ad & tracker blocker with stealth evasion, YouTube SponsorBlock engine, element zapper, GDPR cleaner, and dynamic DNR rules.",
   "permissions": [
     "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess",
     "declarativeNetRequestFeedback",
     "storage",
     "tabs",
-    "scripting"
+    "activeTab",
+    "scripting",
+    "contextMenus"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },
+  "options_page": "options.html",
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["detector_scan.js", "stealth_mode.js", "content.js"],
+      "js": ["detector_scan.js", "stealth_mode.js", "zapper.js", "content.js"],
       "run_at": "document_start",
-      "all_frames": false
+      "all_frames": true
     },
     {
       "matches": ["*://*.youtube.com/*"],
@@ -39,11 +43,20 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "b-AD",
+    "default_title": "b-AD Ultra",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "zap_element": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Z",
+        "mac": "Command+Shift+Z"
+      },
+      "description": "Activate Visual Element Zapper"
     }
   },
   "icons": {

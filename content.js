@@ -47,6 +47,21 @@
     ".native-ad-unit"
   ];
 
+  const COOKIE_ANNOYANCE_SELECTORS = [
+    "#onetrust-banner-sdk",
+    "#onetrust-consent-sdk",
+    ".cookie-consent",
+    ".cookie-banner",
+    ".cookie-notice",
+    ".gdpr-modal",
+    ".gdpr-banner",
+    "#gdpr-consent-tool-wrapper",
+    'div[id*="cookie-notice"]',
+    'div[id*="cookie-banner"]',
+    'div[class*="cookieConsent"]',
+    'div[class*="CookieConsent"]'
+  ];
+
   const TRACKER_PATTERNS = [
     /google-analytics\.com/,
     /googletagmanager\.com/,
@@ -67,11 +82,13 @@
   ];
 
   let isDisabled = false;
+  let customSelectors = [];
 
   function checkDisabledStatus() {
     return new Promise(res => {
       try {
-        chrome.storage.local.get({ globallyDisabled: false, disabledSites: [] }, stats => {
+        chrome.storage.local.get({ globallyDisabled: false, disabledSites: [], customSelectors: [] }, stats => {
+          customSelectors = stats.customSelectors || [];
           if (stats.globallyDisabled) return res(true);
           const host = location.hostname.replace(/^www\./, "");
           const isPaused = (stats.disabledSites || []).some(s => host === s || host.endsWith("." + s));
@@ -90,24 +107,9 @@
     } catch (_) {}
   }
 
-  function matches(el, selectors) {
-    if (!el || !el.matches) return false;
-    return selectors.some(s => {
-      try { return el.matches(s); } catch (_) { return false; }
-    });
-  }
-
-  function queryAll(root, selectors) {
-    const found = new Set();
-    selectors.forEach(s => {
-      try {
-        (root || document).querySelectorAll(s).forEach(e => found.add(e));
-      } catch (_) {}
-    });
-    return [...found];
-  }
-
   function hideEl(el) {
+    if (!el || !el.style) return;
+    el.style.setProperty("display", "none", "important");
     el.style.setProperty("visibility", "hidden", "important");
     el.style.setProperty("pointer-events", "none", "important");
     el.style.setProperty("max-height", "1px", "important");
@@ -120,22 +122,36 @@
     if (MODE === "stealth") {
       hideEl(el);
     } else {
-      try { el.remove(); } catch (_) {}
+      try { el.remove(); } catch (_) { hideEl(el); }
     }
     notify(location.hostname, "ad");
   }
 
   function injectBaseStyles() {
-    if (document.getElementById("b-ad-v3-style")) return;
+    if (document.getElementById("b-ad-v4-style")) return;
     const style = document.createElement("style");
-    style.id = "b-ad-v3-style";
-    style.textContent = AD_SELECTORS.join(",\n") + "{\nvisibility:hidden!important;\npointer-events:none!important;\nmax-height:1px!important;\noverflow:hidden!important;\nopacity:0!important;\n}";
+    style.id = "b-ad-v4-style";
+    const allSelectors = [...AD_SELECTORS, ...COOKIE_ANNOYANCE_SELECTORS, ...customSelectors];
+    style.textContent = allSelectors.join(",\n") + "{\ndisplay:none!important;\nvisibility:hidden!important;\npointer-events:none!important;\nopacity:0!important;\n}";
     (document.head || document.documentElement).appendChild(style);
   }
 
   function scanRoot(root) {
-    if (isDisabled) return;
-    queryAll(root, AD_SELECTORS).forEach(el => processAd(el));
+    if (isDisabled || !root) return;
+    const selectors = [...AD_SELECTORS, ...COOKIE_ANNOYANCE_SELECTORS, ...customSelectors];
+    selectors.forEach(s => {
+      try {
+        root.querySelectorAll(s).forEach(el => processAd(el));
+      } catch (_) {}
+    });
+
+    // Shadow DOM Recursive Scan
+    try {
+      const allEls = root.querySelectorAll("*");
+      allEls.forEach(el => {
+        if (el.shadowRoot) scanRoot(el.shadowRoot);
+      });
+    } catch (_) {}
   }
 
   function startObserver() {
@@ -151,10 +167,6 @@
               continue;
             }
           }
-          if (matches(node, AD_SELECTORS)) {
-            MODE === "stealth" ? setTimeout(() => processAd(node), 250) : processAd(node);
-            continue;
-          }
           scanRoot(node);
         }
       }
@@ -169,6 +181,7 @@
     injectBaseStyles();
     scanRoot(document.body || document.documentElement);
     startObserver();
+
     setTimeout(() => scanRoot(document.body), 800);
     setTimeout(() => scanRoot(document.body), 2500);
     setTimeout(() => scanRoot(document.body), 5000);
