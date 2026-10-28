@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>b-AD Ultra Protection</title>
+  <title>b-AD Ultra v5.0 Enterprise</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -15,18 +15,21 @@
     <!-- Top Header -->
     <header class="header">
       <div class="brand">
-        <div class="shield-badge">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <div class="shield-badge" id="headerShield">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             <path d="m9 12 2 2 4-4"/>
           </svg>
         </div>
         <div class="brand-text">
-          <span class="title">b-AD</span>
-          <span class="version-tag">v4.0 Ultra</span>
+          <div class="brand-row">
+            <span class="title">b-AD</span>
+            <span class="version-tag">v5.0 ENT</span>
+          </div>
+          <span class="brand-sub" id="tabHitSummary">0 blocked on this tab</span>
         </div>
       </div>
-      
+
       <div class="header-controls">
         <label class="power-toggle" title="Toggle Global Protection">
           <input type="checkbox" id="globalToggle" checked />
@@ -37,27 +40,43 @@
 
     <!-- Quick Action Bar -->
     <div class="quick-actions">
-      <button class="action-btn zap-btn" id="btnZap">
+      <button class="action-btn zap-btn" id="btnZap" title="Point-and-click visual element remover (Ctrl+Shift+Z)">
         <span>⚡</span> Zap Element
       </button>
-      <button class="action-btn options-btn" id="btnOptions">
-        <span>⚙</span> Options & Rules
+      <button class="action-btn rule-btn" id="btnQuickRule" title="Quickly add a custom block rule">
+        <span>＋</span> Quick Rule
+      </button>
+      <button class="action-btn options-btn" id="btnOptions" title="Open Enterprise Control Center">
+        <span>⚙</span> Control
       </button>
     </div>
 
+    <!-- Collapsible Quick Rule Drawer -->
+    <div class="quick-drawer" id="quickRuleDrawer" hidden>
+      <div class="drawer-row">
+        <input type="text" id="quickRuleInput" placeholder="CSS selector (.ad-box) or ||domain.com^" />
+        <button class="drawer-save-btn" id="btnSaveQuickRule">Add</button>
+      </div>
+      <div class="drawer-hint" id="quickRuleFeedback">Prefix with <code>||</code> for network DNR block, otherwise saved as CSS rule.</div>
+    </div>
+
     <!-- Navigation Tabs -->
-    <nav class="nav-tabs">
-      <button class="tab-btn active" data-tab="tab-overview">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    <nav class="nav-tabs" role="tablist">
+      <button class="tab-btn active" data-tab="tab-overview" role="tab">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         Overview
       </button>
-      <button class="tab-btn" data-tab="tab-domains">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      <button class="tab-btn" data-tab="tab-domains" role="tab">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
         Domains
       </button>
-      <button class="tab-btn" data-tab="tab-settings">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Settings
+      <button class="tab-btn" data-tab="tab-activity" role="tab">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Live Log
+      </button>
+      <button class="tab-btn" data-tab="tab-settings" role="tab">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Modules
       </button>
     </nav>
 
@@ -70,10 +89,12 @@
             <div class="pulse-dot" id="statusDot"></div>
             <span class="status-title" id="statusLabel">PROTECTION ACTIVE</span>
           </div>
-          <span class="mode-badge" id="modeBadge">NORMAL</span>
+          <span class="mode-badge" id="modeBadge">STRICT</span>
         </div>
         <div class="site-bar">
-          <span class="site-host" id="currentHost">scanning...</span>
+          <div class="site-meta">
+            <span class="site-host" id="currentHost">scanning...</span>
+          </div>
           <button class="site-toggle-btn" id="btnSiteToggle">Pause Site</button>
         </div>
       </div>
@@ -82,7 +103,7 @@
       <div class="metrics-grid">
         <div class="metric-card metric-red">
           <div class="metric-head">
-            <span class="metric-label">ADS BLOCKED</span>
+            <span class="metric-label">ADS & ANNOYANCES</span>
             <span class="metric-icon">✕</span>
           </div>
           <div class="metric-value" id="adsBlocked">0</div>
@@ -90,7 +111,7 @@
 
         <div class="metric-card metric-amber">
           <div class="metric-head">
-            <span class="metric-label">TRACKERS</span>
+            <span class="metric-label">TRACKERS BLOCKED</span>
             <span class="metric-icon">◎</span>
           </div>
           <div class="metric-value" id="trackersBlocked">0</div>
@@ -98,7 +119,7 @@
 
         <div class="metric-card metric-blue">
           <div class="metric-head">
-            <span class="metric-label">DATA SAVED</span>
+            <span class="metric-label">BANDWIDTH SAVED</span>
             <span class="metric-icon">⚡</span>
           </div>
           <div class="metric-value" id="bandwidthSaved">0 B</div>
@@ -106,26 +127,29 @@
 
         <div class="metric-card metric-green">
           <div class="metric-head">
-            <span class="metric-label">TOP AD SOURCE</span>
-            <span class="metric-icon">★</span>
+            <span class="metric-label">TIME SAVED</span>
+            <span class="metric-icon">⏱</span>
           </div>
-          <div class="metric-value metric-value--sm" id="topDomain">—</div>
+          <div class="metric-value" id="timeSaved">0s</div>
         </div>
       </div>
 
-      <!-- Ratio Bar -->
+      <!-- Ratio Breakdown -->
       <div class="ratio-section">
         <div class="ratio-header">
-          <span>Blocking Breakdown</span>
+          <span>Threat Interception Mix</span>
           <span class="ratio-total" id="barTotal">0 total</span>
         </div>
         <div class="ratio-track">
           <div class="ratio-seg seg-ads" id="segAds" style="width:0%"></div>
           <div class="ratio-seg seg-trackers" id="segTrack" style="width:0%"></div>
+          <div class="ratio-seg seg-sponsors" id="segSponsors" style="width:0%"></div>
         </div>
         <div class="ratio-legend">
           <span class="legend-item"><span class="dot dot-red"></span> Ads</span>
           <span class="legend-item"><span class="dot dot-amber"></span> Trackers</span>
+          <span class="legend-item"><span class="dot dot-violet"></span> Sponsors/GDPR</span>
+          <span class="legend-top-domain" id="topDomainPill">Top: —</span>
         </div>
       </div>
     </main>
@@ -135,7 +159,7 @@
       <div class="domains-toolbar">
         <div class="search-box">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input type="text" id="domainSearch" placeholder="Search blocked domains..." />
+          <input type="text" id="domainSearch" placeholder="Filter intercepted domains..." />
         </div>
         <span class="domains-badge" id="domainsCount">0</span>
       </div>
@@ -145,57 +169,69 @@
       </div>
     </main>
 
-    <!-- Tab 3: Settings -->
+    <!-- Tab 3: Live Interception Log -->
+    <main class="tab-content" id="tab-activity">
+      <div class="activity-header">
+        <span>Recent Blocked Events (Local Buffer)</span>
+        <span class="domains-badge" id="activityCount">0</span>
+      </div>
+      <div class="domains-list" id="activityList">
+        <div class="domains-empty">No recent events recorded in this session.</div>
+      </div>
+    </main>
+
+    <!-- Tab 4: Protection Modules -->
     <main class="tab-content" id="tab-settings">
       <div class="settings-group">
         <div class="setting-item">
           <div class="setting-info">
-            <span class="setting-title">Global Protection Switch</span>
-            <span class="setting-desc">Enable or disable b-AD across all tabs</span>
+            <span class="setting-title">MAIN-World Stealth & Canvas Shield</span>
+            <span class="setting-desc">Offscreen canvas noise & anti-adblock XHR/DOM spoofing</span>
           </div>
-          <label class="power-toggle">
-            <input type="checkbox" id="settingsGlobalToggle" checked />
+          <label class="power-toggle power-toggle--sm">
+            <input type="checkbox" data-setting="stealthMode" checked />
             <span class="power-slider"></span>
           </label>
         </div>
 
         <div class="setting-item">
           <div class="setting-info">
-            <span class="setting-title">Stealth Mode Evasion & Anti-Fingerprint</span>
-            <span class="setting-desc">Canvas noise, Global parameter spoofing</span>
+            <span class="setting-title">YouTube Engine 5.0</span>
+            <span class="setting-desc">Pre-roll/mid-roll skip, audio-safe speed boost & Shorts</span>
           </div>
-          <span class="status-pill green">ACTIVE</span>
+          <label class="power-toggle power-toggle--sm">
+            <input type="checkbox" data-setting="youtubeEngine" checked />
+            <span class="power-slider"></span>
+          </label>
         </div>
 
         <div class="setting-item">
           <div class="setting-info">
-            <span class="setting-title">YouTube Engine 3.0</span>
-            <span class="setting-desc">SponsorBlock API & Shorts auto-cleaner</span>
+            <span class="setting-title">SponsorBlock Segment Auto-Skip</span>
+            <span class="setting-desc">Auto-skip sponsor, intro, outro & self-promo segments</span>
           </div>
-          <span class="status-pill green">ACTIVE</span>
+          <label class="power-toggle power-toggle--sm">
+            <input type="checkbox" data-setting="sponsorBlock" checked />
+            <span class="power-slider"></span>
+          </label>
         </div>
 
         <div class="setting-item">
           <div class="setting-info">
-            <span class="setting-title">Visual Element Zapper</span>
-            <span class="setting-desc">Point-and-click (Ctrl+Shift+Z)</span>
+            <span class="setting-title">GDPR & Cookie Consent Cleaner</span>
+            <span class="setting-desc">Suppresses OneTrust, Cookiebot & consent modal walls</span>
           </div>
-          <span class="status-pill green">ACTIVE</span>
-        </div>
-
-        <div class="setting-item">
-          <div class="setting-info">
-            <span class="setting-title">GDPR Cookie Wall Cleaner</span>
-            <span class="setting-desc">Auto-hides cookie consent popups</span>
-          </div>
-          <span class="status-pill green">ACTIVE</span>
+          <label class="power-toggle power-toggle--sm">
+            <input type="checkbox" data-setting="cookieCleaner" checked />
+            <span class="power-slider"></span>
+          </label>
         </div>
       </div>
 
       <div class="danger-zone">
         <button class="reset-btn" id="btnReset">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-          RESET ALL ANALYTICS
+          <span id="resetBtnText">RESET TELEMETRY COUNTERS</span>
         </button>
       </div>
     </main>
@@ -204,9 +240,9 @@
     <footer class="footer">
       <div class="footer-status">
         <span class="shield-mini">⬡</span>
-        <span>b-AD Ultra MV3 Shield</span>
+        <span>b-AD v5.0 MV3 Shield</span>
       </div>
-      <span class="footer-privacy">Privacy First • Local Only</span>
+      <span class="footer-privacy">100% Local • Zero Telemetry</span>
     </footer>
 
   </div>

@@ -1,8 +1,11 @@
 {
   "manifest_version": 3,
   "name": "b-AD Ultra",
-  "version": "4.0.0",
-  "description": "Enterprise ad & tracker blocker with stealth evasion, YouTube SponsorBlock engine, element zapper, GDPR cleaner, and dynamic DNR rules.",
+  "short_name": "b-AD",
+  "version": "5.0.0",
+  "version_name": "5.0.0 Enterprise",
+  "description": "Enterprise Manifest V3 ad, tracker & privacy suite with MAIN-world stealth evasion, YouTube Engine 5.0 (SponsorBlock), HUD Element Zapper, URL parameter stripper, and atomic DNR control.",
+  "minimum_chrome_version": "116",
   "permissions": [
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess",
@@ -11,9 +14,15 @@
     "tabs",
     "activeTab",
     "scripting",
-    "contextMenus"
+    "contextMenus",
+    "alarms"
   ],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com;"
+  },
   "background": {
     "service_worker": "background.js"
   },
@@ -21,12 +30,23 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["detector_scan.js", "stealth_mode.js", "zapper.js", "content.js"],
+      "js": ["stealth_mode.js"],
       "run_at": "document_start",
+      "world": "MAIN",
       "all_frames": true
     },
     {
-      "matches": ["*://*.youtube.com/*"],
+      "matches": ["<all_urls>"],
+      "js": ["detector_scan.js", "zapper.js", "content.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.youtube-nocookie.com/*"
+      ],
       "js": ["youtube_engine.js"],
       "run_at": "document_idle",
       "all_frames": false
@@ -43,7 +63,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "b-AD Ultra",
+    "default_title": "b-AD Ultra v5.0 Enterprise",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -56,7 +76,14 @@
         "default": "Ctrl+Shift+Z",
         "mac": "Command+Shift+Z"
       },
-      "description": "Activate Visual Element Zapper"
+      "description": "Activate Visual Element Zapper HUD"
+    },
+    "toggle_site_protection": {
+      "suggested_key": {
+        "default": "Alt+Shift+P",
+        "mac": "Alt+Shift+P"
+      },
+      "description": "Pause or Resume Protection on Current Site"
     }
   },
   "icons": {
