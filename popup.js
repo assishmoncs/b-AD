@@ -1,27 +1,29 @@
-/**
- * b-AD Ultra v5.0 Enterprise — Popup Dashboard Controller
- */
+/** b-AD Ultra 6.0 popup */
 
 "use strict";
 
-const trackerMeta = {};
 let activeTabInfo = { id: null, host: "" };
 let resetConfirmTimer = null;
+let noticeTimer = null;
 
-async function loadTrackerDatabase() {
-  try {
-    const res = await fetch(chrome.runtime.getURL("tracker_list.json"));
-    const data = await res.json();
-    if (data && Array.isArray(data.trackers)) {
-      for (const t of data.trackers) {
-        trackerMeta[t.domain] = {
-          name: t.name || t.domain,
-          category: t.category || "Tracker",
-          risk: t.risk || "Medium"
-        };
-      }
+function showNotice(message) {
+  const notice = document.getElementById("popupNotice");
+  notice.textContent = message;
+  notice.hidden = false;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { notice.hidden = true; }, 4500);
+}
+
+function sendCommand(message, onSuccess = refresh) {
+  chrome.runtime.sendMessage(message, response => {
+    const error = chrome.runtime.lastError;
+    if (error || !response?.ok) {
+      showNotice(response?.error || error?.message || "Could not update protection");
+      refresh();
+      return;
     }
-  } catch (_) {}
+    onSuccess(response);
+  });
 }
 
 function fmtNum(n) {
@@ -29,14 +31,6 @@ function fmtNum(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
   return String(n);
-}
-
-function fmtBytes(b) {
-  b = Number(b) || 0;
-  if (b <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 3);
-  return (b / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + " " + units[i];
 }
 
 function fmtDuration(sec) {
@@ -98,25 +92,43 @@ function setupTabs() {
   const tabs = document.querySelectorAll(".tab-btn");
   const contents = document.querySelectorAll(".tab-content");
 
-  tabs.forEach(btn => {
-    btn.addEventListener("click", () => {
+  const activate = btn => {
       tabs.forEach(t => t.classList.remove("active"));
+      tabs.forEach(t => t.setAttribute("aria-selected", String(t === btn)));
       contents.forEach(c => c.classList.remove("active"));
 
       btn.classList.add("active");
       const targetId = btn.dataset.tab;
       const targetEl = document.getElementById(targetId);
       if (targetEl) targetEl.classList.add("active");
+  };
+  tabs.forEach((btn, index) => {
+    btn.addEventListener("click", () => activate(btn));
+    btn.addEventListener("keydown", event => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 :
+        (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+      activate(tabs[next]);
+      tabs[next].focus();
     });
   });
 }
 
-function renderStatusBanner(mode, isPausedGlobal, isPausedSite) {
+function renderStatusBanner(mode, isPausedGlobal, isPausedSite, supported) {
   const card = document.getElementById("statusCard");
   const shield = document.getElementById("headerShield");
   const label = document.getElementById("statusLabel");
   const badge = document.getElementById("modeBadge");
 
+  if (!supported) {
+    card.className = "status-card paused";
+    shield.className = "shield-badge paused";
+    label.textContent = "UNAVAILABLE ON THIS PAGE";
+    badge.textContent = "BROWSER PAGE";
+    badge.className = "mode-badge stealth";
+    return;
+  }
   if (isPausedGlobal) {
     card.className = "status-card paused";
     shield.className = "shield-badge paused";
@@ -139,16 +151,16 @@ function renderStatusBanner(mode, isPausedGlobal, isPausedSite) {
   shield.className = "shield-badge";
 
   if (mode === "youtube") {
-    label.textContent = "YOUTUBE ENGINE 5.0 ACTIVE";
-    badge.textContent = "YT SHIELD";
+    label.textContent = "YOUTUBE CONTROLS ACTIVE";
+    badge.textContent = "YOUTUBE";
     badge.className = "mode-badge youtube";
   } else if (mode === "stealth") {
-    label.textContent = "STEALTH EVASION ACTIVE";
+    label.textContent = "STEALTH HELPERS ACTIVE";
     badge.textContent = "STEALTH";
     badge.className = "mode-badge stealth";
   } else {
     label.textContent = "PROTECTION ACTIVE";
-    badge.textContent = "STRICT";
+    badge.textContent = "ON";
     badge.className = "mode-badge";
   }
 }
@@ -166,25 +178,19 @@ function renderDomains(counts, query) {
   if (!pairs.length) {
     list.innerHTML = query
       ? '<div class="domains-empty">No matching domains found.</div>'
-      : '<div class="domains-empty">No blocked domains recorded yet.</div>';
+      : '<div class="domains-empty">No page actions recorded yet.</div>';
     return;
   }
 
   const max = pairs[0][1] || 1;
   list.innerHTML = pairs.slice(0, 35).map(([domain, count], i) => {
     const pct = Math.max(4, Math.round((count / max) * 100));
-    const meta = trackerMeta[domain] || {
-      category: domain.includes("ad") ? "Ad Network" : "Tracking Domain",
-      risk: "Medium"
-    };
-    const tagClass = meta.risk === "Critical" || meta.risk === "High" ? "tag-red" : "";
     return `
       <div class="domain-row">
         <div class="domain-main">
           <div class="domain-info">
             <span class="domain-rank">${i + 1}</span>
             <span class="domain-name" title="${esc(domain)}">${esc(domain)}</span>
-            <span class="domain-tag ${tagClass}">${esc(meta.category)}</span>
           </div>
           <span class="domain-count">${fmtNum(count)}</span>
         </div>
@@ -209,7 +215,7 @@ function renderActivityLog(events) {
 
   list.innerHTML = items.slice(0, 25).map(ev => {
     const badgeClass = ev.kind === "ad" ? "tag-red" : ev.kind === "tracker" ? "tag-amber" : "";
-    const kindLabel = ev.kind === "sponsor" ? "SPONSOR" : ev.kind === "cookie" ? "GDPR" : ev.kind.toUpperCase();
+    const kindLabel = ev.kind === "sponsor" ? "SPONSOR" : ev.kind === "cookie" ? "CONSENT" : ev.kind.toUpperCase();
     return `
       <div class="domain-row">
         <div class="domain-main">
@@ -231,13 +237,12 @@ async function refresh() {
 
   chrome.runtime.sendMessage({ type: "GET_STATS", tabId: activeTabInfo.id }, stats => {
     void chrome.runtime.lastError;
-    if (!stats) return;
+    if (!stats) { showNotice("Could not load extension status"); return; }
 
     const ads = stats.adsBlocked || 0;
-    const trk = stats.trackersBlocked || 0;
-    const spn = (stats.sponsorsSkipped || 0) + (stats.cookiesCleaned || 0);
-    const bw = stats.bandwidthSaved || 0;
-    const timeSec = stats.timeSavedSec || Math.round((ads + trk) * 0.14);
+    const consent = stats.cookiesCleaned || 0;
+    const sponsors = stats.sponsorsSkipped || 0;
+    const timeSec = stats.timeSavedSec || 0;
     const dc = stats.domainCounts || {};
     const siteModes = stats.siteModes || {};
     const disabledSites = stats.disabledSites || [];
@@ -247,7 +252,7 @@ async function refresh() {
     document.getElementById("tabHitSummary").textContent =
       globallyDisabled
         ? "Protection paused globally"
-        : `${fmtNum(tabHits)} blocked on active tab`;
+        : `${fmtNum(tabHits)} page actions on this tab`;
 
     const isPausedSite = currentHost && disabledSites.some(
       s => currentHost === s || currentHost.endsWith("." + s)
@@ -260,11 +265,12 @@ async function refresh() {
     const cfg = stats.settings || {};
     document.querySelectorAll("input[data-setting]").forEach(input => {
       const key = input.dataset.setting;
-      input.checked = cfg[key] !== false;
+      input.checked = cfg[key] === true;
     });
 
     // Site Toggle Button
     const btnSite = document.getElementById("btnSiteToggle");
+    document.getElementById("btnZap").disabled = !currentHost;
     if (!currentHost) {
       btnSite.style.display = "none";
     } else {
@@ -280,25 +286,25 @@ async function refresh() {
 
     // KPI Metrics
     document.getElementById("adsBlocked").textContent = fmtNum(ads);
-    document.getElementById("trackersBlocked").textContent = fmtNum(trk);
-    document.getElementById("bandwidthSaved").textContent = fmtBytes(bw);
+    document.getElementById("trackersBlocked").textContent = fmtNum(consent);
+    document.getElementById("bandwidthSaved").textContent = fmtNum(sponsors);
     document.getElementById("timeSaved").textContent = fmtDuration(timeSec);
 
     const topDom = topEntry(dc)[0];
     document.getElementById("topDomainPill").textContent = `Top: ${topDom}`;
-    document.getElementById("barTotal").textContent = `${fmtNum(ads + trk)} total`;
+    document.getElementById("barTotal").textContent = `${fmtNum(ads + consent + sponsors)} total`;
 
     // Ratio Segment Bar
-    const total = Math.max(1, ads + trk + spn);
-    document.getElementById("segAds").style.width = ((Math.max(0, ads - spn) / total) * 100).toFixed(1) + "%";
-    document.getElementById("segTrack").style.width = ((trk / total) * 100).toFixed(1) + "%";
-    document.getElementById("segSponsors").style.width = ((spn / total) * 100).toFixed(1) + "%";
+    const total = Math.max(1, ads + consent + sponsors);
+    document.getElementById("segAds").style.width = ((ads / total) * 100).toFixed(1) + "%";
+    document.getElementById("segTrack").style.width = ((consent / total) * 100).toFixed(1) + "%";
+    document.getElementById("segSponsors").style.width = ((sponsors / total) * 100).toFixed(1) + "%";
 
     // Render Mode, Domains & Activity Log
-    const mode = currentHost.includes("youtube.com")
+    const mode = (currentHost === "youtube.com" || currentHost.endsWith(".youtube.com")) && cfg.youtubeEngine
       ? "youtube"
-      : (siteModes[currentHost] || "normal");
-    renderStatusBanner(mode, globallyDisabled, isPausedSite);
+      : (cfg.stealthMode ? siteModes[currentHost] || "normal" : "normal");
+    renderStatusBanner(mode, globallyDisabled, isPausedSite, !!currentHost);
 
     const query = document.getElementById("domainSearch").value;
     renderDomains(dc, query);
@@ -309,17 +315,14 @@ async function refresh() {
 function bindEvents() {
   // Global Toggle
   document.getElementById("globalToggle").addEventListener("change", e => {
-    chrome.runtime.sendMessage({ type: "TOGGLE_GLOBAL", value: !e.target.checked }, refresh);
+    sendCommand({ type: "TOGGLE_GLOBAL", value: !e.target.checked });
   });
 
   // Per-Site Whitelist Toggle (with automatic tab reload)
   document.getElementById("btnSiteToggle").addEventListener("click", async () => {
     const info = await queryActiveTab();
     if (!info.host) return;
-    chrome.runtime.sendMessage(
-      { type: "TOGGLE_SITE", host: info.host, reloadTabId: info.id },
-      refresh
-    );
+    sendCommand({ type: "TOGGLE_SITE", host: info.host, reloadTabId: info.id });
   });
 
   // Visual Zapper Trigger
@@ -327,8 +330,9 @@ function bindEvents() {
     const info = await queryActiveTab();
     if (info.id) {
       chrome.tabs.sendMessage(info.id, { type: "START_ZAPPER" }, () => {
-        void chrome.runtime.lastError;
-        window.close();
+        const error = chrome.runtime.lastError;
+        if (error) showNotice(error.message || "Zapper unavailable on this page");
+        else window.close();
       });
     }
   });
@@ -346,13 +350,22 @@ function bindEvents() {
   const submitQuickRule = () => {
     const val = ruleInput.value.trim();
     if (!val) return;
-    const isDnr = val.startsWith("||") || val.startsWith("|http") || val.includes("^");
+    const isDnr = val.startsWith("||");
+    if (!isDnr) {
+      try { document.createDocumentFragment().querySelector(val); }
+      catch (_) {
+        feedback.textContent = "Invalid CSS selector syntax.";
+        feedback.style.color = "#ef4444";
+        return;
+      }
+    }
     const msg = isDnr
       ? { type: "ADD_DYNAMIC_RULE", filter: val }
       : { type: "ADD_CUSTOM_SELECTOR", selector: val };
 
     chrome.runtime.sendMessage(msg, res => {
-      if (res && res.ok) {
+      const error = chrome.runtime.lastError;
+      if (!error && res && res.ok) {
         ruleInput.value = "";
         feedback.textContent = isDnr
           ? "✓ Saved dynamic network DNR rule!"
@@ -360,7 +373,7 @@ function bindEvents() {
         feedback.style.color = "#10b981";
         refresh();
       } else {
-        feedback.textContent = (res && res.error) || "Invalid rule syntax.";
+        feedback.textContent = (res && res.error) || error?.message || "Invalid rule syntax.";
         feedback.style.color = "#ef4444";
       }
     });
@@ -380,10 +393,7 @@ function bindEvents() {
   document.querySelectorAll("input[data-setting]").forEach(input => {
     input.addEventListener("change", () => {
       const key = input.dataset.setting;
-      chrome.runtime.sendMessage(
-        { type: "UPDATE_SETTINGS", settings: { [key]: input.checked } },
-        refresh
-      );
+      sendCommand({ type: "UPDATE_SETTINGS", settings: { [key]: input.checked } });
     });
   });
 
@@ -397,21 +407,20 @@ function bindEvents() {
       clearTimeout(resetConfirmTimer);
       resetConfirmTimer = setTimeout(() => {
         btnReset.classList.remove("confirming");
-        resetText.textContent = "RESET TELEMETRY COUNTERS";
+        resetText.textContent = "RESET ACTIVITY COUNTERS";
       }, 3500);
       return;
     }
     clearTimeout(resetConfirmTimer);
     btnReset.classList.remove("confirming");
-    resetText.textContent = "RESET TELEMETRY COUNTERS";
-    chrome.runtime.sendMessage({ type: "RESET_STATS", includeRules: false }, refresh);
+    resetText.textContent = "RESET ACTIVITY COUNTERS";
+    sendCommand({ type: "RESET_STATS", includeRules: false });
   });
 
   document.getElementById("domainSearch").addEventListener("input", refresh);
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
-  await loadTrackerDatabase();
+document.addEventListener("DOMContentLoaded", () => {
   setupTabs();
   bindEvents();
   refresh();

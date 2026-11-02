@@ -1,11 +1,11 @@
 /**
- * b-AD Ultra v5.0 Enterprise — Interactive Visual Element Zapper HUD
+ * b-AD Ultra 6.0 — Interactive Visual Element Zapper
  * ---------------------------------------------------------------------------
  * Upgrades over v4.0:
  * 1. Viewport-Aware Bounding Box & Label Clamping (never clips off top/right edges).
  * 2. Keyboard & Scroll Element Traversal: Press Up/Down arrows (or Alt+Scroll)
  *    while hovering to expand selection to Parent container or drill into Child.
- * 3. Floating Enterprise HUD Banner with live selector preview & Undo support.
+ * 3. Floating HUD banner with selector preview.
  * 4. Instant rule validation and persistence via background service worker.
  */
 
@@ -17,7 +17,7 @@
   let highlightBox = null;
   let labelBox = null;
   let hudBanner = null;
-  const zappedHistory = [];
+  let previousCursor = "";
 
   function isZapperInternalNode(el) {
     if (!el) return true;
@@ -217,20 +217,15 @@
     const selector = generateSelector(target);
 
     if (selector) {
-      zappedHistory.push({ el: target, selector });
-      try {
-        target.style.setProperty("display", "none", "important");
-      } catch (_) {}
-
       chrome.runtime.sendMessage(
         { type: "ADD_CUSTOM_SELECTOR", selector },
-        () => {
-          void chrome.runtime.lastError;
-          showToast(`Zapped! Saved rule: ${selector}`);
-          chrome.runtime.sendMessage(
-            { type: "BAD_BLOCKED", url: location.hostname, kind: "ad" },
-            () => void chrome.runtime.lastError
-          );
+        response => {
+          const error = chrome.runtime.lastError;
+          if (error || !response?.ok) {
+            showToast(response?.error || error?.message || "Could not save rule", "#ef4444");
+          } else {
+            showToast(`Saved rule: ${selector}`);
+          }
         }
       );
     }
@@ -278,6 +273,7 @@
     document.addEventListener("click", onClick, true);
     document.addEventListener("keydown", onKeyDown, true);
     if (document.body) {
+      previousCursor = document.body.style.cursor;
       document.body.style.cursor = "crosshair";
     }
   }
@@ -291,7 +287,7 @@
     document.removeEventListener("click", onClick, true);
     document.removeEventListener("keydown", onKeyDown, true);
     if (document.body) {
-      document.body.style.cursor = "";
+      document.body.style.cursor = previousCursor;
     }
   }
 

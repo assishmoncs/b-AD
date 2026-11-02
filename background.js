@@ -1,28 +1,12 @@
-/**
- * b-AD Ultra v5.0 Enterprise — Background Service Worker
- * ---------------------------------------------------------------------------
- * Architecture Highlights:
- * 1. Atomic In-Memory State Cache + Debounced Storage Flush Queue (eliminates
- *    concurrent read-modify-write race conditions under heavy network loads).
- * 2. True Declarative Net Request (DNR) Synchronization:
- *    - Global Pause toggles static ruleset "ad_block_rules" & dynamic rules.
- *    - Site Whitelisting injects high-priority (10000) allowAllRequests rules
- *      in reserved ID space [900001..999999] so paused domains truly bypass DNR.
- *    - User Dynamic Rules managed deterministically in ID space [100001..899999].
- * 3. Session-Persisted Per-Tab Counters (survives MV3 Service Worker sleep).
- * 4. Strict Message Sender Verification & Schema Validation for Config Imports.
- */
+/** b-AD Ultra 6.0 background worker: settings, network rules, and page activity. */
 
 "use strict";
 
-const VERSION = "5.0.0";
+const VERSION = "6.0.0";
 const STATIC_RULESET_ID = "ad_block_rules";
+const TRACKING_RULESET_ID = "tracking_param_rules";
 const USER_DNR_MIN_ID = 100001;
 const ALLOW_DNR_BASE_ID = 900001;
-
-const AVG_BYTES_AD = 102400;      // ~100 KB per blocked ad payload
-const AVG_BYTES_TRACKER = 22528;  // ~22 KB per blocked tracker script/beacon
-const AVG_BYTES_SPONSOR = 524288; // ~512 KB per skipped video/sponsor segment
 
 const AD_DOMAIN_SET = new Set([
   "doubleclick.net", "googlesyndication.com", "adservice.google.com",
@@ -57,12 +41,11 @@ const ALL_RESOURCE_TYPES = [
 
 function getDefaultSettings() {
   return {
-    stealthMode: true,
-    cookieCleaner: true,
+    stealthMode: false,
+    cookieCleaner: false,
     youtubeEngine: true,
-    sponsorBlock: true,
-    stripTrackingParams: true,
-    strictCosmetic: true
+    sponsorBlock: false,
+    stripTrackingParams: true
   };
 }
 
@@ -92,6 +75,7 @@ function getInitialState() {
 let stateCache = null;
 let stateInitPromise = null;
 let flushTimer = null;
+let flushChain = Promise.resolve();
 const dirtyKeys = new Set();
 const tabBlockCounts = new Map();
 
@@ -103,10 +87,14 @@ async function ensureStateLoaded() {
     try {
       chrome.storage.local.get(getInitialState(), data => {
         const defaults = getInitialState();
+        const settings = { ...defaults.settings };
+        for (const key of Object.keys(settings)) {
+          if (typeof data?.settings?.[key] === "boolean") settings[key] = data.settings[key];
+        }
         stateCache = {
           ...defaults,
           ...data,
-          settings: { ...defaults.settings, ...(data && data.settings ? data.settings : {}) },
+          settings,
           domainCounts: (data && typeof data.domainCounts === "object" && data.domainCounts) || {},
           siteModes: (data && typeof data.siteModes === "object" && data.siteModes) || {},
           disabledSites: Array.isArray(data && data.disabledSites) ? data.disabledSites : [],
@@ -135,47 +123,37 @@ function scheduleStorageFlush(keys, immediate = false) {
   if (!flushTimer) {
     flushTimer = setTimeout(() => {
       flushTimer = null;
-      flushStorageNow();
+      flushStorageNow().catch(() => {});
     }, 350);
   }
   return Promise.resolve();
 }
 
 function flushStorageNow() {
-  return new Promise(resolve => {
+  const write = () => new Promise((resolve, reject) => {
     if (!stateCache || dirtyKeys.size === 0) return resolve();
+    const keys = Array.from(dirtyKeys);
     const payload = {};
-    dirtyKeys.forEach(k => {
-      if (k in stateCache) payload[k] = stateCache[k];
-    });
+    keys.forEach(k => { if (k in stateCache) payload[k] = stateCache[k]; });
     dirtyKeys.clear();
     try {
       chrome.storage.local.set(payload, () => {
-        void chrome.runtime.lastError;
-        resolve();
+        const error = chrome.runtime.lastError;
+        if (error) {
+          keys.forEach(k => dirtyKeys.add(k));
+          reject(new Error(error.message || "Could not save extension settings"));
+        } else {
+          resolve();
+        }
       });
-    } catch (_) {
-      resolve();
+    } catch (error) {
+      keys.forEach(k => dirtyKeys.add(k));
+      reject(error);
     }
   });
+  flushChain = flushChain.then(write, write);
+  return flushChain;
 }
-
-// Keep stateCache synchronized if options.js or another context writes directly to storage
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "local" || !stateCache) return;
-  let whitelistChanged = false;
-  let globalChanged = false;
-  for (const [key, change] of Object.entries(changes)) {
-    if (change && typeof change.newValue !== "undefined") {
-      stateCache[key] = change.newValue;
-      if (key === "disabledSites") whitelistChanged = true;
-      if (key === "globallyDisabled") globalChanged = true;
-    }
-  }
-  if (whitelistChanged || globalChanged) {
-    syncDnrEngineState().catch(() => {});
-  }
-});
 
 /* ============================================================================
  * Per-Tab Session Counter Persistence
@@ -216,10 +194,13 @@ function normalizeHost(rawInput) {
   try {
     const withProto = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed) ? trimmed : "https://" + trimmed;
     const u = new URL(withProto);
-    return u.hostname.replace(/^www\./, "");
-  } catch (_) {
-    return trimmed.replace(/^www\./, "").split("/")[0].split(":")[0];
-  }
+    if (!/^https?:$/.test(u.protocol) || u.username || u.password) return "";
+    const host = u.hostname.replace(/^www\./, "");
+    if (host.length > 253 || !host.split(".").every(label =>
+      label.length > 0 && label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)
+    )) return "";
+    return host;
+  } catch (_) { return ""; }
 }
 
 function extractRootDomain(urlOrHost) {
@@ -255,20 +236,19 @@ function isSiteWhitelisted(host, disabledSites) {
 /* ============================================================================
  * Declarative Net Request (DNR) Synchronization Engine
  * ========================================================================== */
-async function syncDnrEngineState() {
-  const state = await ensureStateLoaded();
-  if (!chrome.declarativeNetRequest) return;
+let dnrSyncQueue = Promise.resolve();
+function syncDnrEngineState() {
+  const sync = async () => {
+    const state = await ensureStateLoaded();
+    if (!chrome.declarativeNetRequest) throw new Error("Network rule API unavailable");
 
-  // 1. Toggle Static Ruleset based on globallyDisabled
-  try {
     await chrome.declarativeNetRequest.updateEnabledRulesets({
-      enableRulesetIds: state.globallyDisabled ? [] : [STATIC_RULESET_ID],
-      disableRulesetIds: state.globallyDisabled ? [STATIC_RULESET_ID] : []
+      enableRulesetIds: state.globallyDisabled ? [] :
+        [STATIC_RULESET_ID, ...(state.settings.stripTrackingParams ? [TRACKING_RULESET_ID] : [])],
+      disableRulesetIds: state.globallyDisabled ? [STATIC_RULESET_ID, TRACKING_RULESET_ID] :
+        (state.settings.stripTrackingParams ? [] : [TRACKING_RULESET_ID])
     });
-  } catch (_) {}
 
-  // 2. Rebuild Dynamic Rules (User Block Rules + Whitelist Allow Rules)
-  try {
     const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
     const removeRuleIds = existingRules.map(r => r.id);
     const addRules = [];
@@ -319,7 +299,48 @@ async function syncDnrEngineState() {
       removeRuleIds,
       addRules
     });
-  } catch (_) {}
+  };
+  dnrSyncQueue = dnrSyncQueue.then(sync, sync);
+  return dnrSyncQueue;
+}
+
+let stateMutationQueue = Promise.resolve();
+function applyDnrMutation(state, mutate, keys) {
+  const work = async () => {
+    const previous = {
+      globallyDisabled: state.globallyDisabled,
+      disabledSites: [...state.disabledSites],
+      customSelectors: [...state.customSelectors],
+      customDnrRules: state.customDnrRules.map(rule => ({ ...rule })),
+      settings: { ...state.settings }
+    };
+    try {
+      mutate();
+      await syncDnrEngineState();
+      await scheduleStorageFlush(keys, true);
+    } catch (error) {
+      Object.assign(state, previous);
+      try { await syncDnrEngineState(); } catch (_) {}
+      throw error;
+    }
+  };
+  stateMutationQueue = stateMutationQueue.then(work, work);
+  return stateMutationQueue;
+}
+
+function applySelectorMutation(state, mutate) {
+  const work = async () => {
+    const previous = [...state.customSelectors];
+    try {
+      mutate();
+      await scheduleStorageFlush(["customSelectors"], true);
+    } catch (error) {
+      state.customSelectors = previous;
+      throw error;
+    }
+  };
+  stateMutationQueue = stateMutationQueue.then(work, work);
+  return stateMutationQueue;
 }
 
 /* ============================================================================
@@ -368,7 +389,7 @@ async function recordBlockEvent({ url, kind = "ad", count = 1, tabId = null, ini
     return;
   }
 
-  const safeCount = Math.max(1, Math.min(Number(count) || 1, 250));
+  const safeCount = Math.max(1, Math.min(Math.floor(Number(count) || 1), 250));
   const isSponsor = kind === "sponsor";
   const isCookie = kind === "cookie";
   const isTracker = !isSponsor && !isCookie && (kind === "tracker" || matchesDomainSet(url, TRACKER_DOMAIN_SET));
@@ -378,28 +399,26 @@ async function recordBlockEvent({ url, kind = "ad", count = 1, tabId = null, ini
 
   if (isAd) {
     state.adsBlocked = (state.adsBlocked || 0) + safeCount;
-    state.bandwidthSaved = (state.bandwidthSaved || 0) + safeCount * AVG_BYTES_AD;
-    state.timeSavedSec = (state.timeSavedSec || 0) + safeCount * 0.18;
   } else if (isTracker) {
     state.trackersBlocked = (state.trackersBlocked || 0) + safeCount;
-    state.bandwidthSaved = (state.bandwidthSaved || 0) + safeCount * AVG_BYTES_TRACKER;
-    state.timeSavedSec = (state.timeSavedSec || 0) + safeCount * 0.08;
   } else if (isSponsor) {
     state.sponsorsSkipped = (state.sponsorsSkipped || 0) + safeCount;
-    state.adsBlocked = (state.adsBlocked || 0) + safeCount;
-    state.bandwidthSaved = (state.bandwidthSaved || 0) + safeCount * AVG_BYTES_SPONSOR;
-    state.timeSavedSec = (state.timeSavedSec || 0) + (durationSec > 0 ? durationSec : safeCount * 15);
+    const duration = Number(durationSec);
+    state.timeSavedSec = (state.timeSavedSec || 0) + (Number.isFinite(duration) ? Math.max(0, Math.min(duration, 3600)) : 0);
   } else if (isCookie) {
     state.cookiesCleaned = (state.cookiesCleaned || 0) + safeCount;
-    state.adsBlocked = (state.adsBlocked || 0) + safeCount;
-    state.timeSavedSec = (state.timeSavedSec || 0) + safeCount * 1.5;
   }
 
   if (targetDomain && targetDomain !== "unknown") {
     state.domainCounts[targetDomain] = (state.domainCounts[targetDomain] || 0) + safeCount;
+    const domains = Object.keys(state.domainCounts);
+    if (domains.length > 500) {
+      const oldest = domains.reduce((a, b) => state.domainCounts[a] <= state.domainCounts[b] ? a : b);
+      delete state.domainCounts[oldest];
+    }
   }
 
-  // Record bounded recent telemetry event log (latest 50 items)
+  // Record bounded recent page-action log (latest 50 items)
   const now = Date.now();
   state.recentEvents = state.recentEvents || [];
   state.recentEvents.unshift({
@@ -417,7 +436,6 @@ async function recordBlockEvent({ url, kind = "ad", count = 1, tabId = null, ini
     "trackersBlocked",
     "sponsorsSkipped",
     "cookiesCleaned",
-    "bandwidthSaved",
     "timeSavedSec",
     "domainCounts",
     "recentEvents"
@@ -429,21 +447,6 @@ async function recordBlockEvent({ url, kind = "ad", count = 1, tabId = null, ini
     setTabCount(tabId, next);
     updateTabBadge(tabId, next, false);
   }
-}
-
-// Listen for DNR rule matches when available
-if (chrome.declarativeNetRequest && chrome.declarativeNetRequest.onRuleMatchedDebug) {
-  chrome.declarativeNetRequest.onRuleMatchedDebug.addListener(({ request, rule }) => {
-    if (rule && rule.ruleId >= ALLOW_DNR_BASE_ID) return; // Ignore allow rules
-    const kind = matchesDomainSet(request.url, TRACKER_DOMAIN_SET) ? "tracker" : "ad";
-    recordBlockEvent({
-      url: request.url,
-      kind,
-      count: 1,
-      tabId: request.tabId,
-      initiator: request.initiator || ""
-    });
-  });
 }
 
 /* ============================================================================
@@ -461,10 +464,20 @@ function isValidCssSelector(selector) {
 function isValidDnrFilter(filter) {
   if (typeof filter !== "string") return false;
   const trimmed = filter.trim();
-  if (!trimmed || trimmed.length > 512) return false;
-  // DNR urlFilter must contain only ASCII characters and no whitespace
-  if (/[^\x21-\x7E]/.test(trimmed)) return false;
-  return true;
+  if (trimmed.length > 253) return false;
+  const match = /^\|\|([a-z0-9.-]+)\^$/.exec(trimmed);
+  return !!match && normalizeHost(match[1]) === match[1] && match[1].includes(".");
+}
+
+function migrateLegacyDnrFilter(rawFilter) {
+  if (typeof rawFilter !== "string") return "";
+  const filter = rawFilter.trim();
+  if (isValidDnrFilter(filter)) return filter;
+  const match = /^\*:\/\/([a-z0-9.-]+)\/\*$/.exec(filter);
+  if (match && normalizeHost(match[1]) === match[1] && match[1].includes(".")) {
+    return `||${match[1]}^`;
+  }
+  return "";
 }
 
 function allocateNextDnrId(existingRules) {
@@ -486,7 +499,7 @@ function createContextMenus() {
     void chrome.runtime.lastError;
     chrome.contextMenus.create({
       id: "BAD_ZAP_ELEMENT",
-      title: "⚡ Zap Element on Page (b-AD v5.0)",
+      title: "⚡ Zap Element on Page (b-AD v6.0)",
       contexts: ["page", "selection", "image", "video", "frame"]
     }, () => void chrome.runtime.lastError);
 
@@ -498,31 +511,26 @@ function createContextMenus() {
 
     chrome.contextMenus.create({
       id: "BAD_OPEN_OPTIONS",
-      title: "⚙ Open b-AD Enterprise Control Center",
+      title: "⚙ Open b-AD Settings",
       contexts: ["page"]
     }, () => void chrome.runtime.lastError);
   });
 }
 
-async function toggleSiteWhitelist(rawHost, tabIdToReload = null) {
+async function toggleSiteWhitelist(rawHost, tabIdToReload = null, desiredState = null) {
   const host = normalizeHost(rawHost);
   if (!host) return { ok: false, error: "Invalid domain" };
 
   const state = await ensureStateLoaded();
-  const set = new Set(state.disabledSites || []);
   let isWhitelisted = false;
-
-  if (set.has(host)) {
-    set.delete(host);
-    isWhitelisted = false;
-  } else {
-    set.add(host);
-    isWhitelisted = true;
-  }
-
-  state.disabledSites = Array.from(set).sort();
-  await scheduleStorageFlush(["disabledSites"], true);
-  await syncDnrEngineState();
+  await applyDnrMutation(state, () => {
+    const set = new Set(state.disabledSites || []);
+    if (desiredState === true) set.add(host);
+    else if (desiredState === false || set.has(host)) set.delete(host);
+    else set.add(host);
+    isWhitelisted = set.has(host);
+    state.disabledSites = Array.from(set).sort();
+  }, ["disabledSites"]);
 
   if (tabIdToReload && tabIdToReload > 0) {
     const count = await getTabCount(tabIdToReload);
@@ -587,11 +595,24 @@ chrome.tabs.onRemoved.addListener(tabId => {
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   const state = await ensureStateLoaded();
+  if (reason === "update" && state.version !== VERSION) {
+    // Version 5 counted debug matches and estimated savings; begin accurate v6 counts.
+    Object.assign(state, {
+      adsBlocked: 0, trackersBlocked: 0, sponsorsSkipped: 0, cookiesCleaned: 0,
+      bandwidthSaved: 0, timeSavedSec: 0, domainCounts: {}, recentEvents: []
+    });
+    state.disabledSites = Array.from(new Set((state.disabledSites || []).map(normalizeHost).filter(Boolean))).slice(0, 1000);
+    state.customSelectors = (state.customSelectors || []).filter(isValidCssSelector).slice(0, 1000);
+    state.customDnrRules = (state.customDnrRules || []).slice(0, 500).flatMap((rule, index) => {
+      const filter = migrateLegacyDnrFilter(rule?.filter);
+      return filter ? [{ id: USER_DNR_MIN_ID + index, filter, createdAt: Number(rule.createdAt) || Date.now(), enabled: rule.enabled !== false }] : [];
+    });
+  }
   state.version = VERSION;
   if (reason === "install") {
     await scheduleStorageFlush(Object.keys(getInitialState()), true);
   } else {
-    await scheduleStorageFlush(["version", "settings"], true);
+    await scheduleStorageFlush(["version", "settings", "disabledSites", "customSelectors", "customDnrRules", "adsBlocked", "trackersBlocked", "sponsorsSkipped", "cookiesCleaned", "bandwidthSaved", "timeSavedSec", "domainCounts", "recentEvents"], true);
   }
   await syncDnrEngineState();
   createContextMenus();
@@ -631,6 +652,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             tabId,
             initiator
           });
+          await flushStorageNow();
           sendResponse({ ok: true });
           break;
         }
@@ -647,6 +669,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               initiator
             });
           }
+          await flushStorageNow();
           sendResponse({ ok: true });
           break;
         }
@@ -657,7 +680,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (host) {
             state.siteModes = state.siteModes || {};
             state.siteModes[host] = msg.mode === "stealth" ? "stealth" : "normal";
-            scheduleStorageFlush(["siteModes"]);
+            const hosts = Object.keys(state.siteModes);
+            if (hosts.length > 200) delete state.siteModes[hosts[0]];
+            await scheduleStorageFlush(["siteModes"], true);
           }
           sendResponse({ ok: true });
           break;
@@ -677,11 +702,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           break;
         }
 
+        case "ADD_SITE": {
+          const res = await toggleSiteWhitelist(msg.host, null, true);
+          sendResponse(res);
+          break;
+        }
+
         case "TOGGLE_GLOBAL": {
           const state = await ensureStateLoaded();
-          state.globallyDisabled = typeof msg.value === "boolean" ? msg.value : !state.globallyDisabled;
-          await scheduleStorageFlush(["globallyDisabled"], true);
-          await syncDnrEngineState();
+          await applyDnrMutation(state, () => {
+            state.globallyDisabled = typeof msg.value === "boolean" ? msg.value : !state.globallyDisabled;
+          }, ["globallyDisabled"]);
           sendResponse({ ok: true, globallyDisabled: state.globallyDisabled });
           break;
         }
@@ -689,8 +720,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "UPDATE_SETTINGS": {
           const state = await ensureStateLoaded();
           if (msg.settings && typeof msg.settings === "object") {
-            state.settings = { ...getDefaultSettings(), ...state.settings, ...msg.settings };
-            await scheduleStorageFlush(["settings"], true);
+            const allowed = {};
+            for (const key of Object.keys(getDefaultSettings())) {
+              if (typeof msg.settings[key] === "boolean") allowed[key] = msg.settings[key];
+            }
+            await applyDnrMutation(state, () => {
+              state.settings = { ...getDefaultSettings(), ...state.settings, ...allowed };
+            }, ["settings"]);
           }
           sendResponse({ ok: true, settings: state.settings });
           break;
@@ -703,24 +739,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             break;
           }
           const state = await ensureStateLoaded();
-          const set = new Set(state.customSelectors || []);
-          set.add(selector);
-          state.customSelectors = Array.from(set);
-          await scheduleStorageFlush(["customSelectors"], true);
+          await applySelectorMutation(state, () => {
+            if (state.customSelectors.length >= 1000 && !state.customSelectors.includes(selector)) {
+              throw new Error("Maximum 1000 element rules");
+            }
+            state.customSelectors = Array.from(new Set([...state.customSelectors, selector]));
+          });
           sendResponse({ ok: true, customSelectors: state.customSelectors });
           break;
         }
 
         case "REMOVE_CUSTOM_SELECTOR": {
           const state = await ensureStateLoaded();
-          const list = Array.isArray(state.customSelectors) ? [...state.customSelectors] : [];
-          if (typeof msg.selector === "string") {
-            state.customSelectors = list.filter(s => s !== msg.selector);
-          } else if (typeof msg.index === "number" && msg.index >= 0 && msg.index < list.length) {
-            list.splice(msg.index, 1);
-            state.customSelectors = list;
-          }
-          await scheduleStorageFlush(["customSelectors"], true);
+          await applySelectorMutation(state, () => {
+            const list = [...state.customSelectors];
+            if (typeof msg.selector === "string") state.customSelectors = list.filter(s => s !== msg.selector);
+            else if (typeof msg.index === "number" && msg.index >= 0 && msg.index < list.length) {
+              list.splice(msg.index, 1);
+              state.customSelectors = list;
+            }
+          });
           sendResponse({ ok: true, customSelectors: state.customSelectors });
           break;
         }
@@ -737,26 +775,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ ok: false, error: "Dynamic rule for this pattern already exists." });
             break;
           }
-          const ruleId = allocateNextDnrId(existing);
-          const newEntry = { id: ruleId, filter, createdAt: Date.now(), enabled: true };
-          state.customDnrRules = [...existing, newEntry];
-          await scheduleStorageFlush(["customDnrRules"], true);
-          await syncDnrEngineState();
+          if (existing.length >= 500) throw new Error("Maximum 500 custom network rules");
+          let ruleId;
+          await applyDnrMutation(state, () => {
+            ruleId = allocateNextDnrId(state.customDnrRules);
+            state.customDnrRules = [...state.customDnrRules, { id: ruleId, filter, createdAt: Date.now(), enabled: true }];
+          }, ["customDnrRules"]);
           sendResponse({ ok: true, ruleId, customDnrRules: state.customDnrRules });
           break;
         }
 
         case "REMOVE_DYNAMIC_RULE": {
           const state = await ensureStateLoaded();
-          const list = Array.isArray(state.customDnrRules) ? [...state.customDnrRules] : [];
-          if (typeof msg.ruleId === "number") {
-            state.customDnrRules = list.filter(r => r.id !== msg.ruleId);
-          } else if (typeof msg.index === "number" && msg.index >= 0 && msg.index < list.length) {
-            list.splice(msg.index, 1);
-            state.customDnrRules = list;
-          }
-          await scheduleStorageFlush(["customDnrRules"], true);
-          await syncDnrEngineState();
+          await applyDnrMutation(state, () => {
+            const list = Array.isArray(state.customDnrRules) ? [...state.customDnrRules] : [];
+            if (typeof msg.ruleId === "number") state.customDnrRules = list.filter(r => r.id !== msg.ruleId);
+            else if (typeof msg.index === "number" && msg.index >= 0 && msg.index < list.length) {
+              list.splice(msg.index, 1);
+              state.customDnrRules = list;
+            }
+          }, ["customDnrRules"]);
           sendResponse({ ok: true, customDnrRules: state.customDnrRules });
           break;
         }
@@ -768,6 +806,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             break;
           }
           const state = await ensureStateLoaded();
+          await applyDnrMutation(state, () => {
           if (Array.isArray(raw.customSelectors)) {
             state.customSelectors = Array.from(
               new Set(raw.customSelectors.map(s => String(s).trim()).filter(isValidCssSelector))
@@ -802,8 +841,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               }
             }
           }
-          await scheduleStorageFlush(["customSelectors", "disabledSites", "customDnrRules", "settings"], true);
-          await syncDnrEngineState();
+          }, ["customSelectors", "disabledSites", "customDnrRules", "settings"]);
           sendResponse({ ok: true });
           break;
         }
@@ -821,14 +859,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           state.domainCounts = {};
           state.recentEvents = [];
           if (includeRules) {
-            state.customSelectors = [];
-            state.customDnrRules = [];
-            state.disabledSites = [];
-            state.globallyDisabled = false;
-            state.settings = fresh.settings;
+            await applyDnrMutation(state, () => {
+              state.customSelectors = [];
+              state.customDnrRules = [];
+              state.disabledSites = [];
+              state.globallyDisabled = false;
+              state.settings = fresh.settings;
+            }, ["customSelectors", "customDnrRules", "disabledSites", "globallyDisabled", "settings"]);
           }
-          await scheduleStorageFlush(Object.keys(fresh), true);
-          await syncDnrEngineState();
+          await scheduleStorageFlush([
+            "adsBlocked", "trackersBlocked", "sponsorsSkipped", "cookiesCleaned",
+            "bandwidthSaved", "timeSavedSec", "domainCounts", "recentEvents"
+          ], true);
+          tabBlockCounts.clear();
+          await chrome.storage.session.clear();
+          chrome.tabs.query({}, tabs => {
+            for (const tab of tabs || []) {
+              if (tab.id) refreshTabBadgeState(tab.id, tab.url);
+            }
+          });
           sendResponse({ ok: true });
           break;
         }

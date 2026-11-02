@@ -1,11 +1,21 @@
-/**
- * b-AD Ultra v5.0 Enterprise — Control Center & Options Controller
- */
+/** b-AD Ultra 6.0 settings */
 
 "use strict";
 
 let staticRulesCache = [];
 let resetConfirmActive = false;
+
+function sendCommand(message, onSuccess) {
+  chrome.runtime.sendMessage(message, response => {
+    const error = chrome.runtime.lastError;
+    if (error || !response?.ok) {
+      showToast(response?.error || error?.message || "Could not save change", true);
+      loadState();
+      return;
+    }
+    if (onSuccess) onSuccess(response);
+  });
+}
 
 function showToast(message, isError = false) {
   const container = document.getElementById("toastContainer");
@@ -24,14 +34,6 @@ function fmtNum(n) {
   return String(n);
 }
 
-function fmtBytes(b) {
-  b = Number(b) || 0;
-  if (b <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 3);
-  return (b / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + " " + units[i];
-}
-
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     "&": "&amp;",
@@ -46,28 +48,39 @@ function setupTabs() {
   const btns = document.querySelectorAll(".nav-btn");
   const panes = document.querySelectorAll(".tab-pane");
 
-  btns.forEach(b => {
-    b.addEventListener("click", () => {
+  const activate = b => {
       btns.forEach(btn => btn.classList.remove("active"));
+      btns.forEach(btn => btn.setAttribute("aria-selected", String(btn === b)));
       panes.forEach(pane => pane.classList.remove("active"));
 
       b.classList.add("active");
       const targetId = b.dataset.tab;
       const pane = document.getElementById(targetId);
       if (pane) pane.classList.add("active");
+  };
+  btns.forEach((b, index) => {
+    b.addEventListener("click", () => activate(b));
+    b.addEventListener("keydown", event => {
+      if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === "Home" ? 0 : event.key === "End" ? btns.length - 1 :
+        (index + (event.key === "ArrowDown" ? 1 : -1) + btns.length) % btns.length;
+      activate(btns[next]);
+      btns[next].focus();
     });
   });
 }
 
 async function loadStaticRules() {
   try {
-    const res = await fetch(chrome.runtime.getURL("rules.json"));
-    const rules = await res.json();
-    if (Array.isArray(rules)) {
-      staticRulesCache = rules;
+    const responses = await Promise.all(["rules.json", "tracking_rules.json"].map(name =>
+      fetch(chrome.runtime.getURL(name))));
+    const rulesets = await Promise.all(responses.map(res => res.json()));
+    if (rulesets.every(Array.isArray)) {
+      staticRulesCache = rulesets.flat();
       renderStaticRules("");
     }
-  } catch (_) {}
+  } catch (_) { showToast("Could not load built-in rules", true); }
 }
 
 function renderStaticRules(query) {
@@ -76,7 +89,7 @@ function renderStaticRules(query) {
   const q = (query || "").trim().toLowerCase();
 
   const filtered = staticRulesCache.filter(r => {
-    const filter = (r.condition && r.condition.urlFilter) || "URL Query Param Transform";
+    const filter = r.id >= 75 ? `Tracking parameters ${r.condition.urlFilter}` : (r.condition && r.condition.urlFilter) || "";
     const actionType = (r.action && r.action.type) || "block";
     return !q || filter.toLowerCase().includes(q) || actionType.toLowerCase().includes(q);
   });
@@ -89,9 +102,7 @@ function renderStaticRules(query) {
   }
 
   container.innerHTML = filtered.map(r => {
-    const filter = (r.condition && r.condition.urlFilter)
-      ? r.condition.urlFilter
-      : "strip: utm_*, fbclid, gclid, msclkid, twclid, ttclid, mc_eid...";
+    const filter = r.id >= 75 ? `Strip tracking links matching ${r.condition.urlFilter}` : r.condition.urlFilter;
     const action = (r.action && r.action.type) ? r.action.type.toUpperCase() : "BLOCK";
     return `
       <div class="rule-item">
@@ -107,8 +118,8 @@ function renderStaticRules(query) {
 
 function loadState() {
   chrome.runtime.sendMessage({ type: "GET_STATS" }, data => {
-    void chrome.runtime.lastError;
-    if (!data) return;
+    const error = chrome.runtime.lastError;
+    if (error || !data) { showToast(error?.message || "Could not load settings", true); return; }
 
     const selectors = data.customSelectors || [];
     const dnrRules = data.customDnrRules || [];
@@ -117,14 +128,14 @@ function loadState() {
 
     // Update KPI Strip
     document.getElementById("kpiAds").textContent = fmtNum(data.adsBlocked || 0);
-    document.getElementById("kpiTrackers").textContent = fmtNum(data.trackersBlocked || 0);
-    document.getElementById("kpiBandwidth").textContent = fmtBytes(data.bandwidthSaved || 0);
+    document.getElementById("kpiTrackers").textContent = fmtNum(data.cookiesCleaned || 0);
+    document.getElementById("kpiBandwidth").textContent = fmtNum(data.sponsorsSkipped || 0);
     document.getElementById("kpiCustomRules").textContent = fmtNum(selectors.length + dnrRules.length);
 
     // Update Module Checkboxes
     document.querySelectorAll("input[data-opt-setting]").forEach(el => {
       const key = el.dataset.optSetting;
-      el.checked = cfg[key] !== false;
+      el.checked = cfg[key] === true;
     });
 
     renderSelectors(selectors);
@@ -212,12 +223,13 @@ function bindEvents() {
     }
 
     chrome.runtime.sendMessage({ type: "ADD_CUSTOM_SELECTOR", selector }, res => {
-      if (res && res.ok) {
+      const error = chrome.runtime.lastError;
+      if (!error && res && res.ok) {
         input.value = "";
         showToast(`Added cosmetic selector: ${selector}`);
         loadState();
       } else {
-        showToast((res && res.error) || "Failed to add selector.", true);
+        showToast((res && res.error) || error?.message || "Failed to add selector.", true);
       }
     });
   };
@@ -234,12 +246,13 @@ function bindEvents() {
     if (!filter) return;
 
     chrome.runtime.sendMessage({ type: "ADD_DYNAMIC_RULE", filter }, res => {
-      if (res && res.ok) {
+      const error = chrome.runtime.lastError;
+      if (!error && res && res.ok) {
         input.value = "";
         showToast(`Added dynamic DNR rule #${res.ruleId}`);
         loadState();
       } else {
-        showToast((res && res.error) || "Failed to add DNR rule.", true);
+        showToast((res && res.error) || error?.message || "Failed to add DNR rule.", true);
       }
     });
   };
@@ -255,13 +268,14 @@ function bindEvents() {
     const host = input.value.trim();
     if (!host) return;
 
-    chrome.runtime.sendMessage({ type: "TOGGLE_SITE", host }, res => {
-      if (res && res.ok) {
+    chrome.runtime.sendMessage({ type: "ADD_SITE", host }, res => {
+      const error = chrome.runtime.lastError;
+      if (!error && res && res.ok) {
         input.value = "";
         showToast(`Updated whitelist status for ${host}`);
         loadState();
       } else {
-        showToast((res && res.error) || "Invalid domain name.", true);
+        showToast((res && res.error) || error?.message || "Invalid domain name.", true);
       }
     });
   };
@@ -284,19 +298,19 @@ function bindEvents() {
 
     if (type === "selector") {
       const index = parseInt(btn.dataset.index, 10);
-      chrome.runtime.sendMessage({ type: "REMOVE_CUSTOM_SELECTOR", index }, () => {
+      sendCommand({ type: "REMOVE_CUSTOM_SELECTOR", index }, () => {
         showToast("Removed custom cosmetic selector.");
         loadState();
       });
     } else if (type === "dnr") {
       const ruleId = parseInt(btn.dataset.id, 10);
-      chrome.runtime.sendMessage({ type: "REMOVE_DYNAMIC_RULE", ruleId }, () => {
+      sendCommand({ type: "REMOVE_DYNAMIC_RULE", ruleId }, () => {
         showToast(`Removed dynamic DNR rule #${ruleId}.`);
         loadState();
       });
     } else if (type === "whitelist") {
       const host = btn.dataset.site;
-      chrome.runtime.sendMessage({ type: "TOGGLE_SITE", host }, () => {
+      sendCommand({ type: "TOGGLE_SITE", host }, () => {
         showToast(`Removed ${host} from whitelist.`);
         loadState();
       });
@@ -307,10 +321,8 @@ function bindEvents() {
   document.querySelectorAll("input[data-opt-setting]").forEach(el => {
     el.addEventListener("change", () => {
       const key = el.dataset.optSetting;
-      chrome.runtime.sendMessage(
-        { type: "UPDATE_SETTINGS", settings: { [key]: el.checked } },
-        () => showToast(`Updated ${key} setting.`)
-      );
+      sendCommand({ type: "UPDATE_SETTINGS", settings: { [key]: el.checked } }, () =>
+        showToast("Setting updated."));
     });
   });
 
@@ -319,7 +331,7 @@ function bindEvents() {
     chrome.runtime.sendMessage({ type: "GET_STATS" }, data => {
       if (!data) return;
       const exportPayload = {
-        version: "5.0.0",
+        version: chrome.runtime.getManifest().version,
         exportedAt: new Date().toISOString(),
         settings: data.settings,
         customSelectors: data.customSelectors,
@@ -330,7 +342,7 @@ function bindEvents() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `b-ad-v5-enterprise-backup-${Date.now()}.json`;
+      a.download = `b-ad-v6-backup-${Date.now()}.json`;
       a.click();
       URL.revokeObjectURL(url);
       showToast("Exported configuration backup JSON.");
@@ -345,16 +357,22 @@ function bindEvents() {
   document.getElementById("fileImport").addEventListener("change", e => {
     const file = e.target.files[0];
     if (!file) return;
+    if (file.size > 1024 * 1024) {
+      showToast("Backup file exceeds 1 MB.", true);
+      e.target.value = "";
+      return;
+    }
     const reader = new FileReader();
     reader.onload = event => {
       try {
         const parsed = JSON.parse(event.target.result);
         chrome.runtime.sendMessage({ type: "IMPORT_CONFIG", data: parsed }, res => {
-          if (res && res.ok) {
+          const error = chrome.runtime.lastError;
+          if (!error && res && res.ok) {
             showToast("Configuration imported and synchronized with DNR engine!");
             loadState();
           } else {
-            showToast((res && res.error) || "Configuration import failed.", true);
+            showToast((res && res.error) || error?.message || "Configuration import failed.", true);
           }
         });
       } catch (_) {
@@ -379,7 +397,7 @@ function bindEvents() {
     }
     resetConfirmActive = false;
     btnResetAll.textContent = "Reset All Extension Data";
-    chrome.runtime.sendMessage({ type: "RESET_STATS", includeRules: true }, () => {
+    sendCommand({ type: "RESET_STATS", includeRules: true }, () => {
       showToast("All extension data and rules reset to factory defaults.");
       loadState();
     });
@@ -391,4 +409,9 @@ document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   loadStaticRules();
   loadState();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && ["settings", "customSelectors", "customDnrRules", "disabledSites"].some(key => changes[key])) {
+      loadState();
+    }
+  });
 });

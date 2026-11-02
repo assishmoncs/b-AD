@@ -72,6 +72,5 @@
   {"id":71,"priority":10,"action":{"type":"block"},"condition":{"urlFilter":"||coin-hive.com^","resourceTypes":["script","xmlhttprequest","websocket"]}},
   {"id":72,"priority":10,"action":{"type":"block"},"condition":{"urlFilter":"||coinhive.com^","resourceTypes":["script","xmlhttprequest","websocket"]}},
   {"id":73,"priority":10,"action":{"type":"block"},"condition":{"urlFilter":"||pardot.com^","resourceTypes":["script","xmlhttprequest","ping"]}},
-  {"id":74,"priority":10,"action":{"type":"block"},"condition":{"urlFilter":"||marketo.net^","resourceTypes":["script","xmlhttprequest","ping"]}},
-  {"id":75,"priority":5,"action":{"type":"redirect","redirect":{"transform":{"queryTransform":{"removeParams":["utm_source","utm_medium","utm_campaign","utm_term","utm_content","fbclid","gclid","dclid","msclkid","twclid","ttclid","mc_eid","igshid","_hsenc","_hsmi","vero_id","oly_enc_id","rb_clickid"]}}}},"condition":{"resourceTypes":["main_frame"]}}
+  {"id":74,"priority":10,"action":{"type":"block"},"condition":{"urlFilter":"||marketo.net^","resourceTypes":["script","xmlhttprequest","ping"]}}
 ]

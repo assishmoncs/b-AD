@@ -1,5 +1,5 @@
 /**
- * b-AD Ultra v5.0 Enterprise — Cosmetic Ad & GDPR Annoyance Engine
+ * b-AD Ultra 6.0 — Cosmetic Ad & Consent Overlay Engine
  * ---------------------------------------------------------------------------
  * Improvements over v4.0:
  * 1. Eliminated duplicate counting & layout thrashing via a WeakSet of
@@ -17,9 +17,10 @@
   "use strict";
 
   const cleanHost = (location.hostname || "").replace(/^www\./, "").toLowerCase();
-  if (!cleanHost || cleanHost.includes("youtube.com")) return;
+  if (!cleanHost) return;
+  const isYouTube = cleanHost === "youtube.com" || cleanHost.endsWith(".youtube.com");
 
-  const AD_SELECTORS = [
+  const AD_SELECTORS = isYouTube ? [] : [
     "ins.adsbygoogle",
     "div[data-ad-slot]",
     "div[data-ad-unit-path]",
@@ -78,25 +79,6 @@
     ".cc-window.cc-banner"
   ];
 
-  const TRACKER_PATTERNS = [
-    /google-analytics\.com/i,
-    /googletagmanager\.com/i,
-    /connect\.facebook\.net/i,
-    /analytics\.tiktok\.com/i,
-    /hotjar\.com/i,
-    /mouseflow\.com/i,
-    /fullstory\.com/i,
-    /mixpanel\.com/i,
-    /segment\.io/i,
-    /amplitude\.com/i,
-    /heap\.io/i,
-    /bat\.bing\.com/i,
-    /tr\.snapchat\.com/i,
-    /analytics\.twitter\.com/i,
-    /clarity\.ms/i,
-    /mc\.yandex\.ru/i
-  ];
-
   const validatorFrag = document.createDocumentFragment();
   const processedNodes = new WeakSet();
   const pendingMutationRoots = new Set();
@@ -104,8 +86,7 @@
   let isDisabled = false;
   let settings = {
     stealthMode: true,
-    cookieCleaner: true,
-    strictCosmetic: true
+    cookieCleaner: false
   };
   let validCustomSelectors = [];
   let combinedAdSelector = AD_SELECTORS.join(",");
@@ -179,7 +160,7 @@
             globallyDisabled: false,
             disabledSites: [],
             customSelectors: [],
-            settings: { stealthMode: true, cookieCleaner: true, strictCosmetic: true }
+            settings: { stealthMode: false, cookieCleaner: false }
           },
           data => {
             void chrome.runtime.lastError;
@@ -199,37 +180,9 @@
     });
   }
 
-  function getCurrentMode() {
-    if (window.__bAD && window.__bAD.mode) return window.__bAD.mode;
-    if (document.documentElement && document.documentElement.dataset.badMode) {
-      return document.documentElement.dataset.badMode;
-    }
-    return "normal";
-  }
-
-  function hideElement(el) {
-    if (!el || !el.style) return;
-    el.style.setProperty("display", "none", "important");
-    el.style.setProperty("visibility", "hidden", "important");
-    el.style.setProperty("pointer-events", "none", "important");
-    el.style.setProperty("max-height", "0px", "important");
-    el.style.setProperty("overflow", "hidden", "important");
-    el.style.setProperty("opacity", "0", "important");
-    el.setAttribute("data-bad-hidden", "true");
-  }
-
   function processElement(el, kind = "ad") {
     if (isDisabled || !el || processedNodes.has(el)) return;
     processedNodes.add(el);
-
-    const mode = getCurrentMode();
-    if (mode === "stealth") {
-      hideElement(el);
-    } else {
-      try {
-        hideElement(el);
-      } catch (_) {}
-    }
     queueTelemetry(cleanHost, kind, 1);
   }
 
@@ -255,8 +208,11 @@
     const coreSelectors = settings.cookieCleaner !== false
       ? [...AD_SELECTORS, ...COOKIE_ANNOYANCE_SELECTORS]
       : [...AD_SELECTORS];
-
-    coreStyle.textContent = `${coreSelectors.join(",\n")} {\n  display: none !important;\n  visibility: hidden !important;\n  pointer-events: none !important;\n  opacity: 0 !important;\n}`;
+    if (coreSelectors.length) {
+      coreStyle.textContent = `${coreSelectors.join(",\n")} {\n  display: none !important;\n  visibility: hidden !important;\n  pointer-events: none !important;\n  opacity: 0 !important;\n}`;
+    } else {
+      coreStyle.remove();
+    }
 
     // 2. Isolated Custom Selectors stylesheet (each selector in its own rule block)
     let customStyle = document.getElementById("b-ad-v5-custom-style");
@@ -278,15 +234,17 @@
     if (isDisabled || !root || !root.querySelectorAll) return;
 
     // 1. Scan Ad Selectors in a single combined query pass
-    try {
-      if (root.nodeType === 1 && root.matches && root.matches(combinedAdSelector)) {
-        processElement(root, "ad");
-      }
-      const adMatches = root.querySelectorAll(combinedAdSelector);
-      for (let i = 0; i < adMatches.length; i++) {
-        processElement(adMatches[i], "ad");
-      }
-    } catch (_) {}
+    if (combinedAdSelector) {
+      try {
+        if (root.nodeType === 1 && root.matches && root.matches(combinedAdSelector)) {
+          processElement(root, "ad");
+        }
+        const adMatches = root.querySelectorAll(combinedAdSelector);
+        for (let i = 0; i < adMatches.length; i++) {
+          processElement(adMatches[i], "ad");
+        }
+      } catch (_) {}
+    }
 
     // 2. Scan GDPR Cookie Annoyances if enabled
     if (settings.cookieCleaner !== false) {
@@ -345,24 +303,9 @@
     if (!document.documentElement) return;
     const obs = new MutationObserver(mutations => {
       if (isDisabled) return;
-      const mode = getCurrentMode();
-
       for (const m of mutations) {
         for (const node of m.addedNodes) {
           if (node.nodeType !== 1) continue;
-
-          if (node.tagName === "SCRIPT" && mode === "normal" && node.src) {
-            if (TRACKER_PATTERNS.some(p => p.test(node.src))) {
-              if (!processedNodes.has(node)) {
-                processedNodes.add(node);
-                node.type = "javascript/blocked";
-                try { node.remove(); } catch (_) {}
-                queueTelemetry(node.src, "tracker", 1);
-              }
-              continue;
-            }
-          }
-
           pendingMutationRoots.add(node);
           if (node.shadowRoot) {
             pendingMutationRoots.add(node.shadowRoot);
@@ -394,12 +337,11 @@
 
   async function boot() {
     isDisabled = await loadConfiguration();
+    startObserver();
     if (isDisabled) return;
 
     injectOrUpdateStyles();
     scanSubtree(document.body || document.documentElement);
-    startObserver();
-
     // Deferred post-hydration passes for lazy-rendered ad slots
     setTimeout(() => !isDisabled && scanSubtree(document.body), 1000);
     setTimeout(() => !isDisabled && scanSubtree(document.body), 3000);

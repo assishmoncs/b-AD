@@ -3,10 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>b-AD Ultra v5.0 Enterprise</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <title>b-AD Ultra 6.0</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
@@ -24,19 +21,20 @@
         <div class="brand-text">
           <div class="brand-row">
             <span class="title">b-AD</span>
-            <span class="version-tag">v5.0 ENT</span>
+            <span class="version-tag">v6.0</span>
           </div>
-          <span class="brand-sub" id="tabHitSummary">0 blocked on this tab</span>
+          <span class="brand-sub" id="tabHitSummary">Checking this tab…</span>
         </div>
       </div>
 
       <div class="header-controls">
         <label class="power-toggle" title="Toggle Global Protection">
-          <input type="checkbox" id="globalToggle" checked />
+          <input type="checkbox" id="globalToggle" aria-label="Enable protection everywhere" checked />
           <span class="power-slider"></span>
         </label>
       </div>
     </header>
+    <div id="popupNotice" class="popup-notice" role="alert" hidden></div>
 
     <!-- Quick Action Bar -->
     <div class="quick-actions">
@@ -46,37 +44,37 @@
       <button class="action-btn rule-btn" id="btnQuickRule" title="Quickly add a custom block rule">
         <span>＋</span> Quick Rule
       </button>
-      <button class="action-btn options-btn" id="btnOptions" title="Open Enterprise Control Center">
-        <span>⚙</span> Control
+      <button class="action-btn options-btn" id="btnOptions" title="Open settings">
+        <span>⚙</span> Settings
       </button>
     </div>
 
     <!-- Collapsible Quick Rule Drawer -->
     <div class="quick-drawer" id="quickRuleDrawer" hidden>
       <div class="drawer-row">
-        <input type="text" id="quickRuleInput" placeholder="CSS selector (.ad-box) or ||domain.com^" />
+        <input type="text" id="quickRuleInput" aria-label="CSS selector or network domain filter" placeholder=".ad-box or ||ads.example.com^" />
         <button class="drawer-save-btn" id="btnSaveQuickRule">Add</button>
       </div>
-      <div class="drawer-hint" id="quickRuleFeedback">Prefix with <code>||</code> for network DNR block, otherwise saved as CSS rule.</div>
+      <div class="drawer-hint" id="quickRuleFeedback" role="status">Use <code>||domain.com^</code> for a network rule, or a CSS selector for an element rule.</div>
     </div>
 
     <!-- Navigation Tabs -->
-    <nav class="nav-tabs" role="tablist">
-      <button class="tab-btn active" data-tab="tab-overview" role="tab">
+    <nav class="nav-tabs" role="tablist" aria-label="Popup sections">
+      <button class="tab-btn active" data-tab="tab-overview" role="tab" aria-selected="true">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         Overview
       </button>
-      <button class="tab-btn" data-tab="tab-domains" role="tab">
+      <button class="tab-btn" data-tab="tab-domains" role="tab" aria-selected="false">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        Domains
+        Sites
       </button>
-      <button class="tab-btn" data-tab="tab-activity" role="tab">
+      <button class="tab-btn" data-tab="tab-activity" role="tab" aria-selected="false">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Live Log
+        Activity
       </button>
-      <button class="tab-btn" data-tab="tab-settings" role="tab">
+      <button class="tab-btn" data-tab="tab-settings" role="tab" aria-selected="false">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Modules
+        Controls
       </button>
     </nav>
 
@@ -103,7 +101,7 @@
       <div class="metrics-grid">
         <div class="metric-card metric-red">
           <div class="metric-head">
-            <span class="metric-label">ADS & ANNOYANCES</span>
+            <span class="metric-label">ADS HIDDEN OR SKIPPED</span>
             <span class="metric-icon">✕</span>
           </div>
           <div class="metric-value" id="adsBlocked">0</div>
@@ -111,7 +109,7 @@
 
         <div class="metric-card metric-amber">
           <div class="metric-head">
-            <span class="metric-label">TRACKERS BLOCKED</span>
+            <span class="metric-label">CONSENT OVERLAYS HIDDEN</span>
             <span class="metric-icon">◎</span>
           </div>
           <div class="metric-value" id="trackersBlocked">0</div>
@@ -119,15 +117,15 @@
 
         <div class="metric-card metric-blue">
           <div class="metric-head">
-            <span class="metric-label">BANDWIDTH SAVED</span>
+            <span class="metric-label">SPONSOR SEGMENTS SKIPPED</span>
             <span class="metric-icon">⚡</span>
           </div>
-          <div class="metric-value" id="bandwidthSaved">0 B</div>
+          <div class="metric-value" id="bandwidthSaved">0</div>
         </div>
 
         <div class="metric-card metric-green">
           <div class="metric-head">
-            <span class="metric-label">TIME SAVED</span>
+            <span class="metric-label">VIDEO TIME SKIPPED</span>
             <span class="metric-icon">⏱</span>
           </div>
           <div class="metric-value" id="timeSaved">0s</div>
@@ -137,7 +135,7 @@
       <!-- Ratio Breakdown -->
       <div class="ratio-section">
         <div class="ratio-header">
-          <span>Threat Interception Mix</span>
+          <span>Recorded page actions</span>
           <span class="ratio-total" id="barTotal">0 total</span>
         </div>
         <div class="ratio-track">
@@ -147,8 +145,8 @@
         </div>
         <div class="ratio-legend">
           <span class="legend-item"><span class="dot dot-red"></span> Ads</span>
-          <span class="legend-item"><span class="dot dot-amber"></span> Trackers</span>
-          <span class="legend-item"><span class="dot dot-violet"></span> Sponsors/GDPR</span>
+          <span class="legend-item"><span class="dot dot-amber"></span> Consent</span>
+          <span class="legend-item"><span class="dot dot-violet"></span> Sponsors</span>
           <span class="legend-top-domain" id="topDomainPill">Top: —</span>
         </div>
       </div>
@@ -159,20 +157,20 @@
       <div class="domains-toolbar">
         <div class="search-box">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input type="text" id="domainSearch" placeholder="Filter intercepted domains..." />
+          <input type="text" id="domainSearch" aria-label="Filter sites" placeholder="Filter sites with activity..." />
         </div>
         <span class="domains-badge" id="domainsCount">0</span>
       </div>
 
       <div class="domains-list" id="domainsList">
-        <div class="domains-empty">No blocked domains recorded yet.</div>
+        <div class="domains-empty">No page actions recorded yet.</div>
       </div>
     </main>
 
     <!-- Tab 3: Live Interception Log -->
     <main class="tab-content" id="tab-activity">
       <div class="activity-header">
-        <span>Recent Blocked Events (Local Buffer)</span>
+        <span>Recent page actions (stored locally)</span>
         <span class="domains-badge" id="activityCount">0</span>
       </div>
       <div class="domains-list" id="activityList">
@@ -185,44 +183,54 @@
       <div class="settings-group">
         <div class="setting-item">
           <div class="setting-info">
-            <span class="setting-title">MAIN-World Stealth & Canvas Shield</span>
-            <span class="setting-desc">Offscreen canvas noise & anti-adblock XHR/DOM spoofing</span>
+            <span class="setting-title">Optional stealth helpers</span>
+            <span class="setting-desc">Bait geometry and canvas noise on selected sites</span>
           </div>
           <label class="power-toggle power-toggle--sm">
-            <input type="checkbox" data-setting="stealthMode" checked />
+            <input type="checkbox" data-setting="stealthMode" aria-label="Enable optional stealth helpers" />
             <span class="power-slider"></span>
           </label>
         </div>
 
         <div class="setting-item">
           <div class="setting-info">
-            <span class="setting-title">YouTube Engine 5.0</span>
-            <span class="setting-desc">Pre-roll/mid-roll skip, audio-safe speed boost & Shorts</span>
+            <span class="setting-title">YouTube ad controls</span>
+            <span class="setting-desc">Try available skip controls and restore playback</span>
           </div>
           <label class="power-toggle power-toggle--sm">
-            <input type="checkbox" data-setting="youtubeEngine" checked />
+            <input type="checkbox" data-setting="youtubeEngine" aria-label="Enable YouTube ad controls" checked />
             <span class="power-slider"></span>
           </label>
         </div>
 
         <div class="setting-item">
           <div class="setting-info">
-            <span class="setting-title">SponsorBlock Segment Auto-Skip</span>
-            <span class="setting-desc">Auto-skip sponsor, intro, outro & self-promo segments</span>
+            <span class="setting-title">SponsorBlock auto skip</span>
+            <span class="setting-desc">Sends the video ID to SponsorBlock when enabled</span>
           </div>
           <label class="power-toggle power-toggle--sm">
-            <input type="checkbox" data-setting="sponsorBlock" checked />
+            <input type="checkbox" data-setting="sponsorBlock" aria-label="Enable SponsorBlock auto skip" />
             <span class="power-slider"></span>
           </label>
         </div>
 
         <div class="setting-item">
           <div class="setting-info">
-            <span class="setting-title">GDPR & Cookie Consent Cleaner</span>
-            <span class="setting-desc">Suppresses OneTrust, Cookiebot & consent modal walls</span>
+            <span class="setting-title">Hide consent overlays</span>
+            <span class="setting-desc">May hide a site's consent choices</span>
           </div>
           <label class="power-toggle power-toggle--sm">
-            <input type="checkbox" data-setting="cookieCleaner" checked />
+            <input type="checkbox" data-setting="cookieCleaner" aria-label="Hide consent overlays" />
+            <span class="power-slider"></span>
+          </label>
+        </div>
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-title">Strip tracking links</span>
+            <span class="setting-desc">Remove common tracking parameters from navigation URLs</span>
+          </div>
+          <label class="power-toggle power-toggle--sm">
+            <input type="checkbox" data-setting="stripTrackingParams" aria-label="Strip tracking parameters" checked />
             <span class="power-slider"></span>
           </label>
         </div>
@@ -231,7 +239,7 @@
       <div class="danger-zone">
         <button class="reset-btn" id="btnReset">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-          <span id="resetBtnText">RESET TELEMETRY COUNTERS</span>
+          <span id="resetBtnText">RESET ACTIVITY COUNTERS</span>
         </button>
       </div>
     </main>
@@ -240,9 +248,9 @@
     <footer class="footer">
       <div class="footer-status">
         <span class="shield-mini">⬡</span>
-        <span>b-AD v5.0 MV3 Shield</span>
+        <span>b-AD v6.0</span>
       </div>
-      <span class="footer-privacy">100% Local • Zero Telemetry</span>
+      <span class="footer-privacy">Local activity • Optional SponsorBlock</span>
     </footer>
 
   </div>

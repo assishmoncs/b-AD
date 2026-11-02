@@ -1,5 +1,5 @@
 {
-  "version": "5.0.0",
+  "version": "6.0.0",
   "trackers": [
     { "domain": "doubleclick.net", "name": "Google DoubleClick", "category": "Ad Network", "risk": "High" },
     { "domain": "googlesyndication.com", "name": "Google AdSense", "category": "Ad Network", "risk": "High" },

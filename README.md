@@ -1,118 +1,46 @@
-# b-AD Ultra v5.0 Enterprise — Next-Gen Manifest V3 Ad, Tracker & Privacy Suite
+# b-AD Ultra 6.0
 
-![Version](https://img.shields.io/badge/Version-v5.0.0%20Enterprise-10b981.svg)
-![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3%20%28116%2B%29-3b82f6.svg)
-![YouTube Engine](https://img.shields.io/badge/YouTube-Engine%205.0%20%2B%20SponsorBlock-ef4444.svg)
-![Stealth](https://img.shields.io/badge/Stealth-MAIN%20World%20Evasion-f59e0b.svg)
-![Privacy](https://img.shields.io/badge/Privacy-100%25%20Local%20Zero%20Telemetry-8b5cf6.svg)
+b-AD Ultra is a Chrome Manifest V3 extension for blocking selected ad and tracker domains, hiding common ad elements, managing custom rules, and controlling protection per site.
 
-> **b-AD Ultra v5.0 Enterprise** is a production-hardened Chrome Manifest V3 privacy, ad-blocking, and anti-fingerprinting extension. Built with an atomic state engine, true `MAIN`-world anti-adblock evasion, bidirectional Declarative Net Request (DNR) synchronization, YouTube Engine 5.0 with SponsorBlock HUD, and an interactive Visual Element Zapper.
+## Install
 
----
+1. Open `chrome://extensions` in Chrome 116 or later.
+2. Enable **Developer mode** and choose **Load unpacked**.
+3. Select this repository folder.
+4. Pin b-AD to the toolbar to access the popup.
 
-## 🚀 What's New in Version 5.0 Enterprise
+The extension starts with network blocking, cosmetic ad filtering, YouTube ad controls, and tracking-link cleanup enabled. Stealth helpers, consent-overlay hiding, and SponsorBlock are off by default for new installs. Existing settings are kept during an upgrade.
 
-1. **🥷 True `MAIN`-World Stealth & Offscreen Canvas Shield (`stealth_mode.js`)**
-   - Injected directly into the page's `MAIN` execution world at `document_start` via Chrome MV3 native world isolation (`"world": "MAIN"`).
-   - Non-destructive **offscreen canvas cloning** applies session-seeded sub-pixel noise to `toDataURL` without altering visible on-screen canvas pixels.
-   - Dispatches spec-compliant `Event("readystatechange")` and `ProgressEvent("load")` on intercepted anti-adblock XHR/Fetch probes and spoofs bait geometry (`offsetHeight`, `offsetWidth`, `getComputedStyle`) plus Google Publisher Tag (`googletag`), AdSense (`adsbygoogle`), and Prebid (`pbjs`) stubs.
+## Controls
 
-2. **⚡ Atomic State Cache & True DNR Whitelist Synchronization (`background.js`)**
-   - Eliminates concurrent storage race conditions (`lost updates`) via an in-memory state cache paired with a debounced storage flush queue (`350ms`) and `chrome.storage.session` per-tab counters that survive MV3 service worker sleep cycles.
-   - Toggling **Global Protection** dynamically enables/disables the static `ad_block_rules` ruleset via `chrome.declarativeNetRequest.updateEnabledRulesets`.
-   - Pausing a site (**Trusted Whitelist**) dynamically injects priority-`10000` `allow` / `allowAllRequests` DNR rules in reserved ID space `900001+` so whitelisted sites genuinely bypass socket-level blocking.
+- **Global protection** pauses or resumes both static network rulesets, custom network rules, and page features.
+- **Pause site** bypasses b-AD's DNR rules for that site and its subdomains. The popup reloads the tab after the change. If you change paused sites in Settings, reload an open tab to restore its page state.
+- **Strip tracking links** controls a separate DNR ruleset that removes common query parameters from top-level navigations.
+- **Custom network rules** accept domain filters such as `||ads.example.com^`.
+- **Element Zapper** creates a CSS selector that you can remove in Settings. `Ctrl+Shift+Z` (`Command+Shift+Z` on macOS) opens it; `Esc` exits.
+- **YouTube controls** try to use available ad skip buttons or accelerate an ad while restoring playback settings afterward. YouTube changes its UI frequently, so this behavior may vary.
+- **SponsorBlock** is optional. When enabled, b-AD sends the current YouTube video ID to `sponsor.ajay.app` to retrieve community-submitted skip segments.
+- **Stealth helpers** are optional. On selected sites they can change bait element geometry and canvas export output. They do not fake successful network requests or replace advertising SDK globals.
 
-3. **🛡️ Expanded 75-Rule DNR Engine + URL Tracking Parameter Stripper (`rules.json`)**
-   - Expanded static ruleset covering 74 ad exchanges, analytics beacons, session replay scripts, malvertising popunders, and cryptojackers, plus Rule `#75` which automatically strips 18 tracking query parameters (`utm_source`, `utm_medium`, `utm_campaign`, `fbclid`, `gclid`, `msclkid`, `twclid`, `ttclid`, `mc_eid`, `igshid`, etc.) on navigation.
+## Activity and privacy
 
-4. **🎥 YouTube Engine 5.0 (`youtube_engine.js`)**
-   - **User Audio & Speed Preservation**: Tracks `mutedByEngine` and `userPlaybackRate` so user-initiated mute or custom playback speeds (`1.25x`, `1.5x`, `2x`) are never clobbered after an ad finishes.
-   - **Event-Driven Architecture**: Uses `yt-navigate-finish`, video `timeupdate` events, and targeted player attribute observers with a 4-second `AbortController` timeout and LRU cache for SponsorBlock segments, plus on-player HUD skip toasts.
+The popup reports page actions observed by the extension: ad elements hidden or ads skipped, consent overlays hidden, SponsorBlock segments skipped, and video seconds skipped. These are not counts of every network request blocked by DNR. Chrome's DNR match debug event is unavailable to a published extension, so b-AD does not claim precise network-block totals or estimated bandwidth savings.
 
-5. **🎯 Viewport-Clamped Element Zapper HUD (`zapper.js`)**
-   - Floating HUD pill with live element dimension tags, automatic viewport edge clamping, and **`↑` / `↓` Arrow Key traversal** to expand selection to parent containers or drill into child nodes before zapping.
+Activity and configuration are stored in `chrome.storage.local`; per-tab activity counts use `chrome.storage.session`. b-AD has no developer analytics endpoint. SponsorBlock is the only built-in external API call, and it is off by default for new installs. Exported JSON backups stay on your computer unless you share them.
 
-6. **🔒 Hardened CSS & Configuration Security (`content.js`, `options.js`)**
-   - Isolates core ad/GDPR styles from custom user selectors and validates every custom CSS selector via a detached `DocumentFragment` (`querySelector`) while blocking CSS injection tokens (`{`, `}`, `;`, `@import`, `url(`).
-   - Deduplicates DOM nodes via `WeakSet`, batches mutations with `requestAnimationFrame`, and aggregates IPC telemetry (`BAD_BLOCKED_BATCH`).
+The extension requests access to all HTTP/HTTPS sites because it applies network rules and cosmetic filters across the web. The popup's per-site pause is available if a site breaks.
 
----
+## Development and release checks
 
-## 🏗️ System Architecture (v5.0 Enterprise)
+Run `npm test` for manifest, rule, state, and DNR-control tests. Run `npm run smoke` for an isolated Chrome test of the UI, network rule controls, and cosmetic pause/resume. The extension has no runtime package dependencies. Before publishing, manually check YouTube playback, custom rule errors, and a service-worker restart. Run `git diff --check` and `npm run package` to create a release ZIP containing only runtime files and icons.
 
-```mermaid
-flowchart TD
-    subgraph Browser ["Chrome MV3 Network Layer"]
-        Req[Outgoing Web Request] --> DNR{Declarative Net Request}
-        DNR -->|Priority 10000 Whitelist| Allow[Allow Request]
-        DNR -->|Rule #75 Query Transform| Strip[Strip UTM / fbclid / gclid]
-        DNR -->|Rules #1-#74 + Custom DNR| Drop[Block at Socket Layer]
-        Allow --> DOM[Page DOM & Runtime]
-        Strip --> DOM
-    end
+## Files
 
-    subgraph ContentLayer ["Dual-World Content Script Architecture"]
-        DOM --> Scan[detector_scan.js - ISOLATED World]
-        DOM --> Stealth[stealth_mode.js - MAIN World]
-        Scan -.->|dataset.badMode Bridge| Stealth
-        DOM --> Cosmetic[content.js - WeakSet + rAF Batching]
-        DOM --> Zapper[zapper.js - HUD Element Picker]
-        DOM -->|youtube.com| YT[youtube_engine.js - YouTube Engine 5.0]
-    end
+- `manifest.json`: permissions, content scripts, commands, and DNR resources.
+- `rules.json`: 74 built-in network blocking rules.
+- `tracking_rules.json`: 36 optional tracking-parameter rules.
+- `background.js`: settings, DNR synchronization, and activity storage.
+- `content.js`, `detector_scan.js`, `stealth_mode.js`, `youtube_engine.js`, `zapper.js`: page features.
+- `popup.*`, `options.*`: user interface.
 
-    subgraph ServiceWorker ["Atomic Background Service Worker (background.js)"]
-        Cosmetic -->|BAD_BLOCKED_BATCH| SW[In-Memory State Cache]
-        YT -->|BAD_BLOCKED| SW
-        SW <-->|Debounced Flush 350ms| Local[(chrome.storage.local)]
-        SW <-->|Tab Badge Persistence| Session[(chrome.storage.session)]
-        SW -->|updateEnabledRulesets & updateDynamicRules| DNR
-    end
-
-    subgraph EnterpriseUI ["Enterprise UI & Control Center"]
-        Popup[popup.html / popup.js] <--> SW
-        Options[options.html / options.js] <--> SW
-    end
-```
-
----
-
-## 📂 Repository Structure
-
-```text
-b-ad-v5/
-├── manifest.json          # Manifest V3 v5.0.0 (MAIN world stealth, CSP, DNR, commands)
-├── background.js          # Atomic state cache, debounced storage, DNR allow/block sync
-├── content.js             # WeakSet DOM ad/GDPR cleaner, isolated CSS validation, rAF batching
-├── stealth_mode.js        # MAIN-world anti-adblock spoofer & offscreen canvas noise shield
-├── detector_scan.js       # Anti-adblock detector & ISOLATED-to-MAIN dataset bridge
-├── youtube_engine.js      # YouTube Engine 5.0 (SponsorBlock LRU cache, HUD toast, audio-safe)
-├── zapper.js              # Visual Element Zapper HUD with ArrowUp/ArrowDown DOM traversal
-├── rules.json             # 75 static DNR rules (ad networks, trackers, URL param stripper)
-├── tracker_list.json      # 69 categorized tracker signatures with threat risk ratings
-├── popup.html             # 4-tab enterprise popup with Quick Rule drawer & Live Log
-├── popup.css              # Enterprise dark glassmorphic styling
-├── popup.js               # Popup controller with two-step reset & real-time module toggles
-├── options.html           # Full-page Enterprise Control Center with KPI strip & Rules Explorer
-├── options.css            # Control Center stylesheet with toast notifications
-├── options.js             # Schema-validated config import/export & rule management controller
-├── icons/                 # Extension toolbar & store icons (16px, 48px, 128px)
-├── LICENSE                # MIT License
-└── README.md              # Architecture & usage documentation
-```
-
----
-
-## 🛠️ Installation & Usage
-
-1. Open Google Chrome or any Chromium-based browser and navigate to `chrome://extensions`.
-2. Enable **Developer mode** in the top-right corner.
-3. Click **Load unpacked** and select the `b-ad-v5/` directory.
-4. Pin **b-AD Ultra** to your browser toolbar:
-   - Press `Ctrl+Shift+Z` (`Cmd+Shift+Z` on macOS) on any page to launch the **Visual Element Zapper HUD**.
-   - Press `Alt+Shift+P` to quickly pause or resume protection on the active site.
-
----
-
-## 📜 License
-
-MIT License
+See [CHANGELOG.md](CHANGELOG.md) for migration notes. Licensed under MIT; see [LICENSE](LICENSE).

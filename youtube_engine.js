@@ -1,5 +1,5 @@
 /**
- * b-AD Ultra v5.0 Enterprise — YouTube Engine 5.0 (Ad Shield + SponsorBlock)
+ * b-AD Ultra 6.0 — YouTube controls and optional SponsorBlock
  * ---------------------------------------------------------------------------
  * Major Upgrades over v4.0:
  * 1. Preserves User Audio & Playback Rate: Tracks `mutedByEngine` and
@@ -16,7 +16,8 @@
 (function () {
   "use strict";
 
-  if (!location.hostname.includes("youtube.com") && !location.hostname.includes("youtube-nocookie.com")) {
+  if (!["youtube.com", "youtube-nocookie.com"].some(domain =>
+    location.hostname === domain || location.hostname.endsWith("." + domain))) {
     return;
   }
 
@@ -56,7 +57,7 @@
   ];
 
   let isDisabled = false;
-  let sponsorBlockEnabled = true;
+  let sponsorBlockEnabled = false;
   let currentVideoId = "";
   let sponsorSegments = [];
   const segmentCache = new Map();
@@ -66,7 +67,10 @@
   let speedBoostedByEngine = false;
   let userPlaybackRate = 1;
   let lastAdBlockNotifiedAt = 0;
+  let adSessionReported = false;
   let boundVideoElement = null;
+  let observedPlayer = null;
+  let playerObserver = null;
 
   function loadSettings() {
     return new Promise(resolve => {
@@ -75,13 +79,13 @@
           {
             globallyDisabled: false,
             disabledSites: [],
-            settings: { youtubeEngine: true, sponsorBlock: true }
+            settings: { youtubeEngine: true, sponsorBlock: false }
           },
           data => {
             void chrome.runtime.lastError;
             if (!data) return resolve(false);
             const cfg = data.settings || {};
-            sponsorBlockEnabled = cfg.sponsorBlock !== false;
+            sponsorBlockEnabled = cfg.sponsorBlock === true;
             if (data.globallyDisabled || cfg.youtubeEngine === false) {
               return resolve(true);
             }
@@ -176,10 +180,13 @@
   function tryClickSkipButton() {
     for (const sel of SKIP_SELECTORS) {
       const btn = document.querySelector(sel);
-      if (btn) {
+      if (btn && !btn.disabled) {
         try {
           btn.click();
-          notifyBlock("ad");
+          if (!adSessionReported) {
+            notifyBlock("ad");
+            adSessionReported = true;
+          }
           return true;
         } catch (_) {}
       }
@@ -207,6 +214,7 @@
     if (!video) return;
 
     if (!isAdPlaying()) {
+      adSessionReported = false;
       restoreNormalPlayback(video);
       // Remember user's chosen playback speed during normal video playback
       if (video.playbackRate && video.playbackRate <= 4) {
@@ -228,9 +236,14 @@
     if (isFinite(video.duration) && video.duration > 0.5 && video.currentTime < video.duration - 0.1) {
       try {
         video.currentTime = Math.max(0, video.duration - 0.05);
-        notifyBlock("ad", Math.round(video.duration));
-        tryClickSkipButton();
-        return;
+        if (video.currentTime >= video.duration - 0.2) {
+          if (!adSessionReported) {
+            notifyBlock("ad");
+            adSessionReported = true;
+          }
+          tryClickSkipButton();
+          return;
+        }
       } catch (_) {}
     }
 
@@ -276,7 +289,7 @@
               end: Number(item.segment[1]),
               category: item.category || "sponsor"
             }));
-          sponsorSegments = parsed;
+          if (currentVideoId === videoId) sponsorSegments = parsed;
           if (segmentCache.size > 50) {
             const firstKey = segmentCache.keys().next().value;
             segmentCache.delete(firstKey);
@@ -326,6 +339,9 @@
   function bindVideoListeners() {
     const video = getVideo();
     if (!video || video === boundVideoElement) return;
+    restoreNormalPlayback(boundVideoElement);
+    mutedByEngine = false;
+    speedBoostedByEngine = false;
     boundVideoElement = video;
 
     video.addEventListener("timeupdate", () => {
@@ -358,32 +374,28 @@
       if (isDisabled) return;
       checkCurrentUrlVideoId();
       bindVideoListeners();
+      observePlayer();
       handleAdState();
     });
 
-    // 2. Observe player class changes (`ad-showing` / `ad-interrupting`)
-    const obs = new MutationObserver(() => {
-      if (isDisabled) return;
-      bindVideoListeners();
-      handleAdState();
-      checkShortsAd();
-    });
-
-    obs.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["class", "is-active"]
-    });
-
-    // 3. Lightweight fallback heartbeat (every 1000ms)
+    // A small heartbeat handles player replacements in YouTube's SPA.
     setInterval(() => {
       if (isDisabled) return;
       checkCurrentUrlVideoId();
       bindVideoListeners();
+      observePlayer();
       handleAdState();
       checkShortsAd();
     }, 1000);
+  }
+
+  function observePlayer() {
+    const player = document.querySelector(".html5-video-player");
+    if (!player || player === observedPlayer) return;
+    if (playerObserver) playerObserver.disconnect();
+    observedPlayer = player;
+    playerObserver = new MutationObserver(() => { if (!isDisabled) handleAdState(); });
+    playerObserver.observe(player, { attributes: true, attributeFilter: ["class"] });
   }
 
   // React to live settings changes
@@ -405,6 +417,7 @@
     injectStyles();
     checkCurrentUrlVideoId();
     bindVideoListeners();
+    observePlayer();
     setupObservers();
   }
 

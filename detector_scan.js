@@ -1,5 +1,5 @@
 /**
- * b-AD Ultra v5.0 Enterprise — Anti-Adblock Detector & Mode Scanner
+ * b-AD Ultra 6.0 — Anti-Adblock Detector & Mode Scanner
  * ---------------------------------------------------------------------------
  * Runs in ISOLATED world at document_start.
  * Classifies whether the current host requires Stealth Evasion Mode or Normal
@@ -73,7 +73,7 @@
   function applyMode(mode) {
     window.__bAD = window.__bAD || {};
     window.__bAD.mode = mode;
-    window.__bAD.version = "5.0.0";
+    window.__bAD.version = "6.0.0";
     try {
       if (document.documentElement) {
         document.documentElement.dataset.badMode = mode;
@@ -85,7 +85,18 @@
   let stealthNeeded = isDomainStealthRequired() || scanExistingScripts();
   applyMode(stealthNeeded ? "stealth" : "normal");
 
-  if (!stealthNeeded && document.documentElement) {
+  function whenRoot(callback) {
+    if (document.documentElement) return callback();
+    const rootObserver = new MutationObserver(() => {
+      if (!document.documentElement) return;
+      rootObserver.disconnect();
+      callback();
+    });
+    rootObserver.observe(document, { childList: true });
+  }
+
+  function watchForDetectors() {
+    if (stealthNeeded) return;
     const obs = new MutationObserver(mutations => {
       for (const m of mutations) {
         for (const node of m.addedNodes) {
@@ -106,20 +117,31 @@
     obs.observe(document.documentElement, { childList: true, subtree: true });
     setTimeout(() => obs.disconnect(), 6000);
   }
+  whenRoot(() => {
+    applyMode(stealthNeeded ? "stealth" : "normal");
+    watchForDetectors();
+  });
 
   // Sync user settings & whitelist state to MAIN world stealth script
-  try {
-    chrome.storage.local.get({ globallyDisabled: false, disabledSites: [], settings: { stealthMode: true } }, data => {
-      void chrome.runtime.lastError;
-      const isWhitelisted = (data.disabledSites || []).some(
-        s => cleanHost === s || cleanHost.endsWith("." + s)
-      );
-      const stealthActive = !data.globallyDisabled && !isWhitelisted && (!data.settings || data.settings.stealthMode !== false);
-      if (document.documentElement) {
-        document.documentElement.dataset.badStealthActive = stealthActive ? "1" : "0";
-      }
-    });
-  } catch (_) {}
+  function updateStealthFlag() {
+    try {
+      chrome.storage.local.get({ globallyDisabled: false, disabledSites: [], settings: { stealthMode: false } }, data => {
+        void chrome.runtime.lastError;
+        const isWhitelisted = (data.disabledSites || []).some(
+          s => cleanHost === s || cleanHost.endsWith("." + s)
+        );
+        const stealthActive = !data.globallyDisabled && !isWhitelisted && data.settings?.stealthMode === true;
+        const value = stealthActive ? "1" : "0";
+        whenRoot(() => { document.documentElement.dataset.badStealthActive = value; });
+      });
+    } catch (_) {}
+  }
+  updateStealthFlag();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && (changes.globallyDisabled || changes.disabledSites || changes.settings)) {
+      updateStealthFlag();
+    }
+  });
 
   window.addEventListener("load", () => {
     if (!cleanHost) return;

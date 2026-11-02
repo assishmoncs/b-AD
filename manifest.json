@@ -2,26 +2,22 @@
   "manifest_version": 3,
   "name": "b-AD Ultra",
   "short_name": "b-AD",
-  "version": "5.0.0",
-  "version_name": "5.0.0 Enterprise",
-  "description": "Enterprise Manifest V3 ad, tracker & privacy suite with MAIN-world stealth evasion, YouTube Engine 5.0 (SponsorBlock), HUD Element Zapper, URL parameter stripper, and atomic DNR control.",
+  "version": "6.0.0",
+  "version_name": "6.0.0",
+  "description": "Ad and tracker blocking, cosmetic filters, optional YouTube sponsor skipping, and site controls.",
   "minimum_chrome_version": "116",
   "permissions": [
     "declarativeNetRequest",
-    "declarativeNetRequestWithHostAccess",
-    "declarativeNetRequestFeedback",
     "storage",
     "tabs",
-    "activeTab",
-    "scripting",
-    "contextMenus",
-    "alarms"
+    "contextMenus"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "http://*/*",
+    "https://*/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline';"
   },
   "background": {
     "service_worker": "background.js"
@@ -29,14 +25,14 @@
   "options_page": "options.html",
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["http://*/*", "https://*/*"],
       "js": ["stealth_mode.js"],
       "run_at": "document_start",
       "world": "MAIN",
       "all_frames": true
     },
     {
-      "matches": ["<all_urls>"],
+      "matches": ["http://*/*", "https://*/*"],
       "js": ["detector_scan.js", "zapper.js", "content.js"],
       "run_at": "document_start",
       "world": "ISOLATED",
@@ -58,12 +54,17 @@
         "id": "ad_block_rules",
         "enabled": true,
         "path": "rules.json"
+      },
+      {
+        "id": "tracking_param_rules",
+        "enabled": true,
+        "path": "tracking_rules.json"
       }
     ]
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "b-AD Ultra v5.0 Enterprise",
+    "default_title": "b-AD Ultra v6.0",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
